@@ -1,4 +1,5 @@
 import { Geist, Geist_Mono } from "next/font/google";
+import Image from "next/image";
 import { Footer, Layout, Navbar } from "nextra-theme-docs";
 import "nextra-theme-docs/style.css";
 import { getPageMap } from "nextra/page-map";
@@ -20,7 +21,20 @@ export const metadata = {
 };
 
 const navbar = (
-	<Navbar logo={<span className="font-mono text-2xl">EarnKit</span>} />
+	<Navbar
+		logo={
+			<div className="flex flex-row items-center gap-3">
+				<Image
+					src="/logo.png"
+					alt="EarnKit Logo"
+					width={32}
+					height={32}
+					className="rounded-md"
+				/>
+				<span className="font-mono text-2xl">EarnKit</span>
+			</div>
+		}
+	/>
 );
 const footer = (
 	<Footer>© {new Date().getFullYear()} EarnKit AI. All rights reserved.</Footer>
