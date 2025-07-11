@@ -31,7 +31,7 @@ const navbar = (
 					height={32}
 					className="rounded-md"
 				/>
-				<span className="font-mono text-2xl">EarnKit</span>
+				<span className="font-mono text-2xl font-semibold">EarnKit</span>
 			</div>
 		}
 	/>

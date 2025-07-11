@@ -2,7 +2,7 @@ import { Callout } from 'nextra/components'
 
 # Engineering Principles & Design
 
-This document outlines the key engineering principles, architectural decisions, and trade-offs made during the development of EarnKit. The primary goal was to build a robust, developer-friendly, and reliable monetization toolkit, even within the constraints of a take-home assignment.
+This document outlines the key engineering principles, architectural decisions, and trade-offs made during the development of EarnKit.
 
 ---
 
@@ -18,7 +18,7 @@ We started with a clear philosophy for the `earnkit-sdk`: it should be lightweig
 
 - **Instant Agent Configuration Change:** The SDK is designed in such a way that the developer doesn't need to redeploy their application to change the agent configuration.
 
-- **Performant and Reliable:** The EarnKit Backend is designed to be extremely performant and reliable, making sure the developer's application is not hindered by the backend. Database and query optimizations like **indexing**, **transactions**, `Promise.all`, `select` queries are implemented.
+- **Performant and Reliable:** The EarnKit Backend is designed to be extremely performant and reliable, making sure the developer's application is not hindered by the backend.
 
 - **Clear & Actionable Errors:** The SDK features a set of custom error classes (`EarnKitInitializationError`, `EarnKitInputError`, `EarnKitApiError`). This empowers developers to move beyond generic error handling and build robust, programmatic responses to specific failures, such as prompting a user to top up when an `EarnKitApiError` with a status of 402 is caught.
 
@@ -37,8 +37,6 @@ We started with a clear philosophy for the `earnkit-sdk`: it should be lightweig
 - **Clean & Maintainable Code (DRY):** The SDK's internal structure adheres to the "Don't Repeat Yourself" principle. For example, common logic like input validation is abstracted into private helper methods (`_validateString`). This reduces code duplication, improves maintainability, and ensures that validation rules are applied consistently across the entire SDK.
 
 - **High-Level Helpers for Common Workflows:** Beyond providing core API methods, the SDK includes high-level utility functions to simplify complex tasks. The `pollForBalanceUpdate` method, for instance, encapsulates the entire asynchronous workflow of checking for a balance change after a top-up, saving the developer from writing boilerplate polling code.
-
----
 
 ## Part 2: Architectural Deep Dive
 
@@ -78,45 +76,3 @@ These core principles directly informed the key architectural decisions of the p
     3. **Optimized for Scale with Indexing:** We've added database indexes to frequently queried columns, such as foreign keys (`developerId`) and fields used in WHERE clauses (like `status` and `userWalletAddress`). This ensures that database lookups remain fast and efficient, even as the data grows.
     4. **Race-Condition Prevention with `upsert`:** For creating or updating user balances, we use the `upsert` operation. This atomic command elegantly handles both cases in a single database roundtrip, simplifying the logic and preventing race conditions that can occur with a manual "read-then-write" approach.
 - **The Trade-off:** There are no direct trade-offs to these decisions. Implementing these patterns requires a deeper understanding of database and backend architecture, but the payoff is a significantly more robust, secure, and reliable system.
-
----
-
-## Part 3: Production Considerations & Future Improvements
-
-The current implementation serves as a robust proof-of-concept. To evolve this into a production-grade service, we would focus on the following key areas:
-
-### 1. Achieving Production-Grade Reliability & Scale
-
-- **Dedicated Blockchain Monitoring:** We would integrate with a dedicated node provider like **Alchemy or Infura**. This provides guaranteed uptime, higher rate limits, and access to archival data, which is essential for a reliable financial service that must never miss a transaction.
-
-- **Database Read Replicas for Performance:** As the platform grows, read-heavy operations (like fetching agent logs and analytics for the dashboard) could slow down critical write operations (like `track` and `capture`). To solve this, we would implement **database read replicas**.
-
-    - **The Benefit:** This architecture isolates the read workload from the write workload, ensuring that intensive analytical queries never block time-sensitive financial transactions, allowing the platform to scale smoothly.
-
-### 2. Implementing Full-Stack Observability
-
-- **Structured Logging:** All `console.log` statements would be replaced with a structured logger like **Pino**/**Winston**. Logs would be formatted as JSON, including context like `agentId` and `traceId`. These structured logs would be shipped to a centralized service (e.g., Datadog, Logtail) for powerful searching, filtering, and analysis.
-
-### 3. Hardening Security
-
-- **SDK Authentication:** Currently, the SDK authenticates with just a public `agentId`. In a production system, this is insufficient. The ideal approach would be a **dual-SDK model**:
-    - **Client-Side SDK (current):** For safe, read-only operations like fetching top-up options.
-    - **Server-Side SDK:** A separate package for a developer's backend, authenticated with a secret key. Critical operations like `track`, `capture`, and `release` would be restricted to this server-to-server communication channel with API key authentication.
-- **CORS Policy:** The backend would implement a strict CORS policy to only allow requests from whitelisted domains associated with a developer's account.
-
-### 4. Platform Business Model
-
-- **Direct vs. Escrow:** The current model has users pay the developer's wallet directly. This is simple but limits business model flexibility.
-- **Future Vision:** A more scalable model would involve a central, secure platform wallet that acts as an escrow. Funds would be paid out to developers on a schedule (e.g., monthly), allowing EarnKit to take a small platform fee (e.g., 5%) as its revenue model, similar to Stripe. This would require a more complex and highly secure payout and accounting system. 
-
-### 5. Application Monitoring & Alerting
-
-- We would integrate an application performance monitoring (APM) tool like **Sentry** for error tracking and **Grafana** (with Prometheus or OpenTelemetry) for metrics. We would define and monitor key indicators (e.g., API error rates, request latency) and configure automated alerts to notify an on-call engineer if a critical threshold is breached.
-
-### 6. Enhancing the Developer & User Experience
-
-- **Real-time Updates via WebSockets & Webhooks:** The current polling for balance updates is effective but inefficient. In production, this would be replaced by a push-based system.
-    - **WebSockets:** For the `example-agent`, the backend could use a WebSocket to instantly notify the client's UI when a top-up is confirmed.
-    - **Signed Webhooks:** For developers building their own backends, we would provide **signed webhooks**. EarnKit would send a cryptographically signed request to a developer's registered endpoint upon events like a confirmed top-up, ensuring secure and reliable server-to-server communication.
-
-- **Dedicated Test Environments:** To provide a safe and professional development workflow, we would introduce a full **Test Mode**. This would include a separate set of test API keys and a dashboard that points to test data. This is a critical feature for any financial API, allowing developers to build and test their integration thoroughly without risking real funds. 
