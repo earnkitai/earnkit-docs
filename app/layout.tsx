@@ -22,7 +22,9 @@ export const metadata = {
 const navbar = (
 	<Navbar logo={<span className="font-mono text-2xl">EarnKit</span>} />
 );
-const footer = <Footer>MIT {new Date().getFullYear()} © Nextra.</Footer>;
+const footer = (
+	<Footer>© {new Date().getFullYear()} EarnKit AI. All rights reserved.</Footer>
+);
 
 export default async function RootLayout({
 	children,
