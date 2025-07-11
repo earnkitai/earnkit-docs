@@ -1,7 +1,24 @@
-import type { NextConfig } from "next";
+import nextra from "nextra";
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+const withNextra = nextra({});
 
-export default nextConfig;
+export default withNextra({
+	async headers() {
+		return [
+			{
+				source: "/api/:path*",
+				headers: [
+					{ key: "Access-Control-Allow-Origin", value: "*" },
+					{
+						key: "Access-Control-Allow-Methods",
+						value: "GET, POST, PUT, DELETE, OPTIONS",
+					},
+					{
+						key: "Access-Control-Allow-Headers",
+						value: "Content-Type, Authorization",
+					},
+				],
+			},
+		];
+	},
+});

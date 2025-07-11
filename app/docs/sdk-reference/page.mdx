@@ -1,0 +1,736 @@
+# EarnKit SDK Reference
+
+Complete API documentation for the EarnKit TypeScript SDK. This SDK enables developers to add usage-based monetization to AI agents with reliable billing, wallet integration, and flexible fee models.
+
+## Installation
+
+```bash
+npm install earnkit-sdk
+# or
+yarn add earnkit-sdk
+# or
+pnpm add earnkit-sdk
+```
+
+## Quick Start
+
+This guide provides a practical overview of the most common SDK workflows, based on the implementation in the example agent.
+
+### 1. Initialization
+
+First, import and instantiate the `EarnKit` class. You only need to do this once per agent in your application.
+
+```typescript
+import { EarnKit, EarnKitApiError } from 'earnkit-sdk';
+
+const agent = new EarnKit({
+  agentId: process.env.NEXT_PUBLIC_AGENT_ID!, // Your Agent ID from the dashboard
+  baseUrl: 'https://your-deployed-backend.vercel.app', // The URL of your deployed 'web' app, "https://api.earnkit.com" for production
+  debug: true, // Optional: Enable debug logging
+});
+```
+
+### 2. Core Flow: Charging for an AI Request
+
+This is the most important pattern. The logic is wrapped in a `try/catch` block to ensure users are never charged for failed requests.
+
+```typescript
+async function handleAIRequest(userMessage: string, userWalletAddress: string) {
+  // This variable is crucial for the release logic
+  let eventId: string | null = null;
+
+  try {
+    // 1. Track the event to place a hold on the user's balance
+    console.log("Tracking event...");
+    const trackResponse = await agent.track({
+      walletAddress: userWalletAddress,
+    });
+    eventId = trackResponse.eventId;
+
+    // 2. Execute your core AI logic
+    console.log("Calling AI...");
+    const aiResponse = await callMyGeminiAPI(userMessage);
+
+    // 3. If the AI call succeeds, capture the event to finalize the charge
+    console.log("Capturing event...");
+    await agent.capture({ eventId });
+
+    // 4. (Optional) Refresh the user's balance in your UI
+    refreshBalanceInUI(userWalletAddress);
+
+    return aiResponse;
+
+  } catch (error) {
+    // 5. If any step fails, release the hold on the funds
+    if (eventId) {
+      console.log("Error occurred, releasing funds...");
+      await agent.release({ eventId });
+    }
+
+    // 6. Handle specific errors from the SDK
+    if (error instanceof EarnKitApiError) {
+      // e.g., "Insufficient funds. Please top up your balance."
+      throw new Error(`API Error: ${error.message}`);
+    } else {
+      // Handle other errors (e.g., AI API failure)
+      throw new Error("An unexpected error occurred.");
+    }
+  }
+}
+```
+
+### 3. User Flow: Topping Up a Balance
+
+This flow shows how to use the SDK to fetch top-up options and process a user's on-chain transaction.
+
+```typescript
+// Assume wallet is your user's connected wallet object (from Privy, RainbowKit, etc.)
+async function handleTopUp(wallet: any, userWalletAddress: string) {
+  try {
+    // 1. Fetch the pre-configured purchase options from your dashboard
+    const { options } = await agent.getTopUpDetails();
+    if (!options || options.length === 0) {
+      console.log("No top-up options available.");
+      return;
+    }
+
+    // 2. Assume the user selects the first option in your UI
+    const selectedOption = options[0];
+
+    // 3. Use the user's wallet to send the on-chain transaction
+    // The to and value come directly from the selected option
+    const tx = await wallet.sendTransaction({
+      to: selectedOption.to,
+      value: BigInt(selectedOption.value), // Use BigInt to avoid precision loss
+      chainId: 84532, // e.g., Base Sepolia
+    });
+    const txReceipt = await tx.wait(); // Wait for the transaction to be mined
+
+    // 4. Submit the transaction hash to the backend for monitoring
+    await agent.submitTopUpTransaction({
+      txHash: txReceipt.transactionHash,
+      walletAddress: userWalletAddress,
+      amountInEth: selectedOption.amountInEth,
+      creditsToTopUp: selectedOption.creditsToTopUp,
+    });
+
+    // 5. Poll for the balance update to provide a great UX
+    const initialBalance = await agent.getBalance({ walletAddress: userWalletAddress });
+
+    agent.pollForBalanceUpdate({
+      walletAddress: userWalletAddress,
+      initialBalance,
+      onConfirmation: (newBalance) => {
+        console.log("Top-up successful! New balance:", newBalance);
+        // Update your UI here
+      },
+      onTimeout: () => {
+        console.log("Confirmation is taking longer than expected. Please check back soon.");
+      },
+    });
+
+  } catch (error) {
+    console.error("Top-up failed:", error);
+    // Handle errors in your UI
+  }
+}
+```
+
+## Configuration
+
+### EarnKitConfig
+
+Configuration object for initializing the SDK.
+
+```typescript
+interface EarnKitConfig {
+  agentId: string;           // Required: Your agent ID from the dashboard
+  baseUrl?: string;          // Optional: API base URL (default: http://localhost:3000)
+  debug?: boolean;           // Optional: Enable debug logging (default: false)
+  requestTimeoutMs?: number; // Optional: Request timeout (default: 30000ms)
+}
+```
+
+**Example:**
+```typescript
+const earnkit = new EarnKit({
+  agentId: 'clxxxxx', // CUID from your dashboard
+  baseUrl: 'https://api.yourapp.com',
+  debug: process.env.NODE_ENV === 'development',
+  requestTimeoutMs: 60000 // 60 seconds
+});
+```
+
+## Core Methods
+
+### track()
+
+Initiates a billable event with provisional charging. This method checks for sufficient funds/credits and creates a pending usage event.
+
+```typescript
+track(params: TrackParams): Promise<{ eventId: string }>
+```
+
+**Parameters:**
+```typescript
+interface TrackParams {
+  walletAddress: string;     // Required: User's wallet address (0x...)
+  idempotencyKey?: string;   // Optional: UUID for duplicate prevention
+  creditsToDeduct?: number;  // Optional: Credits to deduct (credit-based models)
+}
+```
+
+**Returns:**
+- `Promise<{ eventId: string }>` - Unique event ID for capture/release
+
+**Examples:**
+
+*Free Tier Model:*
+```typescript
+// Charges 0.0001 ETH after 50 free prompts
+const { eventId } = await earnkit.track({
+  walletAddress: '0x742d35Cc6435C0532925a3b8b98C31d5b1c9c2c4'
+});
+```
+
+*Credit-Based Model:*
+```typescript
+// Deducts specified credits from user balance
+const { eventId } = await earnkit.track({
+  walletAddress: '0x742d35Cc6435C0532925a3b8b98C31d5b1c9c2c4',
+  creditsToDeduct: 25 // Override default credits per prompt
+});
+```
+
+*With Idempotency:*
+```typescript
+import { v4 as uuidv4 } from 'uuid';
+
+const { eventId } = await earnkit.track({
+  walletAddress: '0x742d35Cc6435C0532925a3b8b98C31d5b1c9c2c4',
+  idempotencyKey: uuidv4() // Prevents duplicate charges
+});
+```
+
+**Throws:**
+- `EarnKitInputError` - Invalid wallet address or parameters
+- `EarnKitApiError` - Insufficient funds/credits (status 402) or API errors
+
+### capture()
+
+Finalizes a pending usage event, confirming the charge. Call this after successful AI operation completion.
+
+```typescript
+capture(params: CaptureParams): Promise<{ success: boolean }>
+```
+
+**Parameters:**
+```typescript
+interface CaptureParams {
+  eventId: string; // Required: Event ID from track() call
+}
+```
+
+**Example:**
+```typescript
+const { eventId } = await earnkit.track({ walletAddress });
+
+try {
+  const aiResponse = await generateAIResponse(prompt);
+  
+  // Confirm the charge
+  await earnkit.capture({ eventId });
+  
+  return aiResponse;
+} catch (error) {
+  await earnkit.release({ eventId });
+  throw error;
+}
+```
+
+**Throws:**
+- `EarnKitInputError` - Invalid event ID
+- `EarnKitApiError` - Event not found or not capturable (status 404)
+
+### release()
+
+Releases a pending usage event, refunding any provisional charges. Call this when AI operations fail.
+
+```typescript
+release(params: ReleaseParams): Promise<{ success: boolean }>
+```
+
+**Parameters:**
+```typescript
+interface ReleaseParams {
+  eventId: string; // Required: Event ID from track() call
+}
+```
+
+**Example:**
+```typescript
+const { eventId } = await earnkit.track({ walletAddress });
+
+try {
+  const result = await riskyAIOperation();
+  await earnkit.capture({ eventId });
+  return result;
+} catch (error) {
+  // Refund user on failure
+  await earnkit.release({ eventId });
+  console.error('AI operation failed, charges refunded');
+  throw error;
+}
+```
+
+**Throws:**
+- `EarnKitInputError` - Invalid event ID
+- `EarnKitApiError` - Event not found or not releasable
+
+## Balance Management
+
+### getBalance()
+
+Retrieves the current ETH and credit balances for a user's wallet.
+
+```typescript
+getBalance(params: { walletAddress: string }): Promise<UserBalance>
+```
+
+**Parameters:**
+```typescript
+interface { walletAddress: string } // User's wallet address
+```
+
+**Returns:**
+```typescript
+interface UserBalance {
+  eth: string;     // ETH balance as string (e.g., "0.005")
+  credits: string; // Credit balance as string (e.g., "150")
+}
+```
+
+**Example:**
+```typescript
+const balance = await earnkit.getBalance({
+  walletAddress: '0x742d35Cc6435C0532925a3b8b98C31d5b1c9c2c4'
+});
+
+console.log(`User has ${balance.eth} ETH and ${balance.credits} credits`);
+
+// Check if user has sufficient credits before operation
+const requiredCredits = 10;
+if (parseInt(balance.credits) < requiredCredits) {
+  throw new Error('Insufficient credits. Please top up.');
+}
+```
+
+## Top-up & Credit Management
+
+### getTopUpDetails()
+
+Fetches available top-up options configured for the agent.
+
+```typescript
+getTopUpDetails(): Promise<TopUpDetailsResponse>
+```
+
+**Returns:**
+```typescript
+interface TopUpDetailsResponse {
+  options: TopUpOption[];
+}
+
+interface TopUpOption {
+  label: string;           // Display label (e.g., "100 Credits")
+  amountInEth: string;     // ETH amount (e.g., "0.001")
+  to: string;             // Developer's deposit address
+  value: string;          // Amount in Wei for transactions
+  creditsToTopUp?: number; // Credits to add (credit-based models)
+}
+```
+
+**Example:**
+```typescript
+const { options } = await earnkit.getTopUpDetails();
+
+options.forEach(option => {
+  console.log(`${option.label}: ${option.amountInEth} ETH`);
+  // Example output: "100 Credits: 0.001 ETH"
+});
+
+// Use with wallet for transaction
+const selectedOption = options[0];
+const tx = await wallet.sendTransaction({
+  to: selectedOption.to,
+  value: BigInt(selectedOption.value) // Use BigInt to avoid precision loss
+});
+```
+
+### submitTopUpTransaction()
+
+Submits a completed transaction hash for monitoring and credit processing.
+
+```typescript
+submitTopUpTransaction(params: SubmitTopUpParams): Promise<SubmitTopUpResponse>
+```
+
+**Parameters:**
+```typescript
+interface SubmitTopUpParams {
+  txHash: string;           // Transaction hash from blockchain
+  walletAddress: string;    // User's wallet address
+  amountInEth: string;      // ETH amount sent
+  creditsToTopUp?: number;  // Credits to add (credit-based models)
+}
+```
+
+**Returns:**
+```typescript
+interface SubmitTopUpResponse {
+  status: string;  // "PENDING_CONFIRMATION"
+  message: string; // Status message
+}
+```
+
+**Example:**
+```typescript
+// After user sends transaction
+const txHash = await wallet.sendTransaction({
+  to: option.to,
+  value: option.value
+});
+
+// Submit for monitoring
+const response = await earnkit.submitTopUpTransaction({
+  txHash: txHash.hash,
+  walletAddress: userAddress,
+  amountInEth: option.amountInEth,
+  creditsToTopUp: option.creditsToTopUp
+});
+
+console.log(response.message); // "Top-up transaction is being monitored."
+```
+
+### pollForBalanceUpdate()
+
+Utility method to poll for balance changes after submitting a top-up transaction.
+
+```typescript
+pollForBalanceUpdate(params: PollingParams): void
+```
+
+**Parameters:**
+```typescript
+interface PollingParams {
+  walletAddress: string;
+  initialBalance: UserBalance;
+  onConfirmation: (newBalance: UserBalance) => void;
+  onTimeout?: () => void;
+  pollInterval?: number; // Default: 10000ms (10 seconds)
+  maxPolls?: number;     // Default: 30 (5 minutes total)
+}
+```
+
+**Example:**
+```typescript
+// Get initial balance
+const initialBalance = await earnkit.getBalance({ walletAddress });
+
+// Submit top-up transaction
+await earnkit.submitTopUpTransaction({
+  txHash,
+  walletAddress,
+  amountInEth: "0.001",
+  creditsToTopUp: 100
+});
+
+// Poll for updates
+earnkit.pollForBalanceUpdate({
+  walletAddress,
+  initialBalance,
+  onConfirmation: (newBalance) => {
+    console.log('Balance updated!', newBalance);
+    // Update UI with new balance
+    updateUserInterface(newBalance);
+  },
+  onTimeout: () => {
+    console.log('Transaction confirmation timed out');
+    // Handle timeout (transaction may still be processing)
+  },
+  pollInterval: 5000, // Check every 5 seconds
+  maxPolls: 60        // Timeout after 5 minutes
+});
+```
+
+## Error Handling
+
+The SDK provides specific error types for different failure scenarios:
+
+### Error Types
+
+```typescript
+import { 
+  EarnKitInitializationError, 
+  EarnKitInputError, 
+  EarnKitApiError 
+} from 'earnkit-sdk';
+```
+
+#### EarnKitInitializationError
+
+Thrown during SDK initialization with invalid configuration.
+
+```typescript
+try {
+  const earnkit = new EarnKit({ agentId: '' }); // Invalid empty agentId
+} catch (error) {
+  if (error instanceof EarnKitInitializationError) {
+    console.error('SDK initialization failed:', error.message);
+  }
+}
+```
+
+#### EarnKitInputError
+
+Thrown when method parameters are invalid.
+
+```typescript
+try {
+  await earnkit.track({ walletAddress: 'invalid-address' });
+} catch (error) {
+  if (error instanceof EarnKitInputError) {
+    console.error('Invalid input:', error.message);
+    // Handle validation error
+  }
+}
+```
+
+#### EarnKitApiError
+
+Thrown when API calls fail. Contains HTTP status and response details.
+
+```typescript
+try {
+  await earnkit.track({ walletAddress });
+} catch (error) {
+  if (error instanceof EarnKitApiError) {
+    console.error(`API Error ${error.status}:`, error.message);
+    
+    switch (error.status) {
+      case 402:
+        console.log('Insufficient funds - prompt user to top up');
+        break;
+      case 404:
+        console.log('Agent not found - check configuration');
+        break;
+      case 500:
+        console.log('Server error - retry later');
+        break;
+    }
+  }
+}
+```
+
+### Comprehensive Error Handling Example
+
+```typescript
+async function processAIRequest(prompt: string, walletAddress: string) {
+  let eventId: string | null = null;
+  
+  try {
+    // Track usage
+    const result = await earnkit.track({ walletAddress });
+    eventId = result.eventId;
+    
+    // Process AI request
+    const aiResponse = await generateAIResponse(prompt);
+    
+    // Confirm charge
+    await earnkit.capture({ eventId });
+    
+    return aiResponse;
+    
+  } catch (error) {
+    // Release pending charge on any failure
+    if (eventId) {
+      try {
+        await earnkit.release({ eventId });
+      } catch (releaseError) {
+        console.error('Failed to release charge:', releaseError);
+      }
+    }
+    
+    // Handle specific error types
+    if (error instanceof EarnKitApiError) {
+      switch (error.status) {
+        case 402:
+          throw new Error('Insufficient funds. Please top up your balance.');
+        case 404:
+          throw new Error('Service configuration error. Please contact support.');
+        default:
+          throw new Error('Service temporarily unavailable. Please try again.');
+      }
+    }
+    
+    if (error instanceof EarnKitInputError) {
+      throw new Error('Invalid request. Please check your input.');
+    }
+    
+    // Re-throw other errors
+    throw error;
+  }
+}
+```
+
+## Best Practices
+
+### 1. Always Use Capture/Release Pattern
+
+```typescript
+// ✅ Good: Proper error handling with release
+const { eventId } = await earnkit.track({ walletAddress });
+try {
+  const result = await aiOperation();
+  await earnkit.capture({ eventId });
+  return result;
+} catch (error) {
+  await earnkit.release({ eventId }); // Always release on failure
+  throw error;
+}
+
+// ❌ Bad: Missing release on failure
+const { eventId } = await earnkit.track({ walletAddress });
+const result = await aiOperation(); // If this fails, user is charged but gets no result
+await earnkit.capture({ eventId });
+```
+
+### 2. Use Idempotency for Critical Operations
+
+```typescript
+import { v4 as uuidv4 } from 'uuid';
+
+// Generate idempotency key per unique operation
+const operationId = uuidv4();
+
+const { eventId } = await earnkit.track({
+  walletAddress,
+  idempotencyKey: operationId // Prevents duplicate charges on retry
+});
+```
+
+### 3. Check Balances Before Expensive Operations
+
+```typescript
+async function expensiveAIOperation(walletAddress: string) {
+  // Check balance first for better UX
+  const balance = await earnkit.getBalance({ walletAddress });
+  
+  if (parseInt(balance.credits) < 50) {
+    throw new Error('Insufficient credits for this operation');
+  }
+  
+  // Proceed with tracking
+  const { eventId } = await earnkit.track({ 
+    walletAddress,
+    creditsToDeduct: 50 
+  });
+  
+  // ... rest of operation
+}
+```
+
+### 4. Implement Proper Logging
+
+```typescript
+const earnkit = new EarnKit({
+  agentId: process.env.EARNKIT_AGENT_ID!,
+  debug: process.env.NODE_ENV === 'development'
+});
+
+// The SDK will log detailed information when debug: true
+```
+
+### 5. Handle Network Errors Gracefully
+
+```typescript
+try {
+  await earnkit.track({ walletAddress });
+} catch (error) {
+  if (error instanceof EarnKitApiError && error.status === 0) {
+    // Network error - the SDK has built-in retry logic
+    console.log('Network error occurred, SDK will retry automatically');
+  }
+}
+```
+
+## Fee Model Configuration
+
+The SDK works with two fee model types configured in your dashboard:
+
+### Free Tier Model
+```typescript
+interface FreeTierConfig {
+  threshold: number;  // Free prompts per wallet
+  rate: number;       // ETH charged per prompt after threshold
+}
+```
+
+### Credit-Based Model
+```typescript
+interface CreditBasedConfig {
+  creditsPerPrompt: number;
+  topUpOptions: {
+    creditAmount: number;
+    pricePerCredit: number;
+  }[];
+}
+```
+
+## Rate Limiting & Retry Logic
+
+The SDK includes built-in retry logic for reliability:
+
+- **Automatic Retries**: Up to 2 retries (1 initial + 2 retries) for server errors (5xx) and timeouts
+- **Exponential Backoff**: 1s, 2s, 4s delays between retries
+- **Request Timeout**: 30 seconds default (configurable)
+- **Error Classification**: Only retries transient errors (server errors and timeouts)
+
+```typescript
+// SDK automatically retries transient failures
+const earnkit = new EarnKit({
+  agentId: 'your-agent-id',
+  requestTimeoutMs: 60000 // Increase timeout for slow networks
+});
+```
+
+## TypeScript Support
+
+The SDK is fully typed with TypeScript. Import types as needed:
+
+```typescript
+import {
+  // Core Class
+  EarnKit,
+
+  // Configuration & Data Types
+  EarnKitConfig,
+  UserBalance,
+  TopUpOption,
+  FreeTierConfig,
+  CreditBasedConfig,
+
+  // Custom Errors
+  EarnKitApiError,
+  EarnKitInputError,
+  EarnKitInitializationError
+} from 'earnkit-sdk';
+
+// All methods are properly typed
+const balance: UserBalance = await earnkit.getBalance({ walletAddress });
+const config: EarnKitConfig = { agentId: 'test' };
+```
+
+---
+
+For more examples and implementation details, see the [main documentation](/docs) or visit the [developer dashboard](/dashboard) to configure your agents. 

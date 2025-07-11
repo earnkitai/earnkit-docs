@@ -1,0 +1,44 @@
+# Introduction
+
+Welcome to the EarnKit documentation!
+
+EarnKit is a monetization toolkit designed to help developers effortlessly add usage-based billing to their AI agents. Whether you want to offer a free trial, charge per use, or implement a sophisticated credit system, EarnKit provides the backend, SDK, and developer dashboard to get you up and running in minutes.
+
+## The Core Problem
+
+Monetizing AI agents is complex. You need to:
+- Securely process micro-transactions without high gas fees.
+- Handle different pricing models (e.g., subscriptions, pay-as-you-go).
+- Prevent users from being charged for failed AI responses.
+- Provide a seamless top-up experience for end-users.
+- Track usage and revenue.
+
+## The EarnKit Solution
+
+EarnKit solves these problems with a hybrid on-chain/off-chain architecture and a simple, powerful SDK.
+
+- **Off-Chain Speed:** All per-prompt charges happen off-chain in our database for instant, gas-free transactions.
+- **On-Chain Security:** User top-ups are standard on-chain transactions (e.g., ETH on Base Sepolia) sent directly to your developer wallet.
+- **Reliable Billing:** Our `track`/`capture`/`release` flow ensures users are only billed for successful AI operations.
+- **Developer Dashboard:** Manage your agents, configure fee models, and view usage logs all in one place.
+
+## How to Get Started
+
+- **[Local Setup](./docs/local-setup):** Clone the repo and run the project locally.
+- **[Testing Instructions](./docs/testing-fee-models):** Instructions to test the fee models.
+- **[SDK Reference](./docs/sdk-reference):** Dive into the SDK's methods and see detailed code examples. 
+
+---
+
+## Next Steps
+
+Ready to explore EarnKit? 
+
+1. **Setup**: Follow our [setup guide](./docs/local-setup) to run locally
+2. **Dashboard**: Visit the [developer dashboard](./dashboard) to create agents
+3. **Example**: Try the example agent at `http://localhost:3001` after setup
+4. **Integration**: Review the SDK documentation and API endpoints
+
+---
+
+This implementation demonstrates how modern AI applications can implement sophisticated, reliable monetization while maintaining excellent developer and user experience. The capture/release pattern ensures billing accuracy, while the flexible fee models support various business strategies.
