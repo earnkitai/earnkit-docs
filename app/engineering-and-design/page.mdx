@@ -42,37 +42,42 @@ We started with a clear philosophy for the `earnkit-sdk`: it should be lightweig
 
 These core principles directly informed the key architectural decisions of the platform.
 
-### 1. The Hybrid Billing Model: On-Chain vs. Off-Chain
+### 1. Hybrid Billing Model: On-Chain vs. Off-Chain
 
-- **The Challenge:** How do you process potentially high-frequency, low-value transactions for each AI interaction without forcing users to pay gas fees every single time and wait for every single transaction to be confirmed?
-- **The Decision:** We implemented a hybrid model.
-    - **Off-Chain (Micro-transactions):** Per-prompt fees and credit deductions are handled as atomic updates in our own database.
-    - **On-Chain (Macro-transactions):** User top-ups are standard blockchain transactions (e.g., sending ETH on Base Sepolia) directly to the developer's wallet.
-- **The Trade-off:** This provides an optimal UX with instant, gas-free interactions. The trade-off is that the off-chain balance relies on a centralized, trusted system. For a production environment, this database would require rigorous security, auditing, and disaster recovery protocols.
+To provide a seamless user experience with instant, gas-free interactions, EarnKit uses a hybrid billing model. This approach addresses the challenge of processing high-frequency, low-value transactions for each AI interaction, which would be slow and costly if handled purely on-chain.
+
+- **Off-Chain Micro-transactions:** Per-prompt fees and credit deductions are handled as atomic updates in our own database. This allows for instantaneous transactions without gas fees.
+- **On-Chain Macro-transactions:** User top-ups are standard blockchain transactions (e.g., sending ETH on Base Sepolia) directly to the developer's wallet, ensuring security and user control over their funds.
+
+The primary trade-off of this model is that the off-chain balance relies on a centralized, trusted system. For a production environment, this database requires rigorous security, auditing, and disaster recovery protocols.
 
 ### 2. The `track/capture/release` Transaction Lifecycle
 
-- **The Challenge:** How do you guarantee a user is never charged for a failed AI call and make sure the developer is credited for a successful AI call?
-- **The Decision:** We implemented a two-step transaction flow. `track()` is called before the AI operation to place a temporary hold on the user's balance. `capture()` is called only after a successful AI response to finalize the charge. If the AI call fails, `release()` is called to cancel the hold and refund the user.
-- **The Trade-off:** This pattern adds a minor complexity to the SDK integration for the developer (they must remember to call `capture` or `release`). However, this is a necessary trade-off for achieving a fair and reliable billing system, which is fundamental to user and developer trust.
+To guarantee that a user is never charged for a failed AI call and to ensure the developer is credited for a successful one, EarnKit implements a two-step transaction flow.
+
+- `track()` is called before the AI operation to place a temporary hold on the user's balance.
+- `capture()` is called only after a successful AI response to finalize the charge.
+- If the AI call fails, `release()` is called to cancel the hold and refund the user.
+
+This pattern adds a minor complexity to the SDK integration, as the developer must remember to call `capture` or `release`. However, this is a necessary trade-off for achieving a fair and reliable billing system, which is fundamental to user and developer trust.
 
 ### 3. Asynchronous Top-Up Confirmation
 
-- **The Challenge:** On-chain transactions can take time to confirm. How do we avoid forcing the user to wait on a loading screen?
-- **The Decision:** The top-up flow is fully asynchronous. The client submits the `txHash` to the backend and the UI responds immediately. A separate, simulated background process on the server monitors the blockchain for confirmation and updates the user's balance once verified.
-- **The Trade-off:** This creates a seamless, non-blocking user experience. The architectural cost is the need for a background worker system. In this assignment, this is simulated with `setTimeout`, but a production system would use a robust job queue (e.g., BullMQ, Celery) for this task.
+On-chain transactions can take time to confirm. To avoid forcing the user to wait on a loading screen, the top-up flow is fully asynchronous. The client submits the `txHash` to the backend, and the UI can respond immediately. A separate background process on the server monitors the blockchain for confirmation and updates the user's balance once verified.
 
-### 4. Idempotency to Prevent Double-Charging
+This creates a seamless, non-blocking user experience. The architectural cost is the need for a background worker system. In the initial prototype, this was simulated with `setTimeout`, but a production system would use a robust job queue (e.g., BullMQ, Celery) for this task.
 
-- **The Challenge:** What happens if a developer's request to `track` a charge times out on the network, and they retry? They might accidentally charge the user twice for the same operation.
-- **The Decision:** The `track` endpoint accepts an optional `idempotencyKey`. If a developer provides this unique key (e.g., a UUID generated for the operation), our backend can recognize and discard any duplicate requests, guaranteeing that the user is only charged once.
+### 4. Idempotency for Safe Retries
+
+Network requests can time out, and clients may retry a request. To prevent accidental double-charging in such scenarios, the `track` endpoint accepts an optional `idempotencyKey`. If a developer provides a unique key for an operation (e.g., a UUID), our backend can recognize and discard any duplicate requests, guaranteeing that the user is only charged once for the same operation.
 
 ### 5. Robust & Performant Backend Design
 
-- **The Challenge:** A backend handling financial state must be both resilient to errors and fast enough to provide a good user experience.
-- **The Decision:** We adopted several key backend and database best practices:
-    1. **Atomicity with Transactions:** All multi-step database operations, such as deleting an agent and its related records or refunding a charge, are wrapped in a `prisma.$transaction`. This guarantees that the operations complete as a single, atomic unit—they either all succeed or all fail, ensuring the database is never left in an inconsistent state.
-    2. **Efficient & Safe Queries:** We make extensive use of Prisma's `select` option to explicitly query for only the data needed by the API endpoint. This prevents accidental data leakage and reduces database load. Furthermore, wherever possible, independent database queries are executed in parallel using `Promise.all` to minimize response latency.
-    3. **Optimized for Scale with Indexing:** We've added database indexes to frequently queried columns, such as foreign keys (`developerId`) and fields used in WHERE clauses (like `status` and `userWalletAddress`). This ensures that database lookups remain fast and efficient, even as the data grows.
-    4. **Race-Condition Prevention with `upsert`:** For creating or updating user balances, we use the `upsert` operation. This atomic command elegantly handles both cases in a single database roundtrip, simplifying the logic and preventing race conditions that can occur with a manual "read-then-write" approach.
-- **The Trade-off:** There are no direct trade-offs to these decisions. Implementing these patterns requires a deeper understanding of database and backend architecture, but the payoff is a significantly more robust, secure, and reliable system.
+A backend handling financial state must be both resilient to errors and fast enough to provide a good user experience. We adopted several key backend and database best practices to achieve this:
+
+1.  **Atomicity with Transactions:** All multi-step database operations, such as deleting an agent and its related records or refunding a charge, are wrapped in a `prisma.$transaction`. This guarantees that the operations complete as a single, atomic unit—they either all succeed or all fail, ensuring the database is never left in an inconsistent state.
+2.  **Efficient & Safe Queries:** We make extensive use of Prisma's `select` option to explicitly query for only the data needed by the API endpoint. This prevents accidental data leakage and reduces database load. Furthermore, wherever possible, independent database queries are executed in parallel using `Promise.all` to minimize response latency.
+3.  **Optimized for Scale with Indexing:** We've added database indexes to frequently queried columns, such as foreign keys (`developerId`) and fields used in WHERE clauses (like `status` and `userWalletAddress`). This ensures that database lookups remain fast and efficient, even as the data grows.
+4.  **Race-Condition Prevention with `upsert`:** For creating or updating user balances, we use the `upsert` operation. This atomic command elegantly handles both cases in a single database roundtrip, simplifying the logic and preventing race conditions that can occur with a manual "read-then-write" approach.
+
+Implementing these patterns requires a deeper understanding of database and backend architecture, but the payoff is a significantly more robust, secure, and reliable system.

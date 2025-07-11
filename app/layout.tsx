@@ -53,7 +53,7 @@ export default async function RootLayout({
 				<Layout
 					navbar={navbar}
 					pageMap={await getPageMap()}
-					docsRepositoryBase="https://github.com/rayvego/earnkit-assignment/tree/main/apps/web"
+					docsRepositoryBase="https://github.com/earnkitai/earnkit-docs"
 					footer={footer}
 				>
 					{children}

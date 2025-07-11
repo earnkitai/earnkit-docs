@@ -25,7 +25,7 @@ import { EarnKit, EarnKitApiError } from 'earnkit-sdk';
 
 const agent = new EarnKit({
   agentId: process.env.NEXT_PUBLIC_AGENT_ID!, // Your Agent ID from the dashboard
-  baseUrl: 'https://your-deployed-backend.vercel.app', // The URL of your deployed 'web' app, "https://api.earnkit.com" for production
+  baseUrl: 'https://api.earnkit.com',
   debug: true, // Optional: Enable debug logging
 });
 ```
@@ -135,7 +135,3 @@ async function handleTopUp(wallet: any, userWalletAddress: string) {
   }
 }
 ```
-
-## Example Agent Reference
-
-Insert example repo and details here.
