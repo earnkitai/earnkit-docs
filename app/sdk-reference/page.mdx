@@ -193,8 +193,8 @@ const balance = await earnkit.getBalance({
 console.log(`User has ${balance.eth} ETH and ${balance.credits} credits`);
 
 // Check if user has sufficient credits before operation
-const requiredCredits = 10;
-if (parseInt(balance.credits) < requiredCredits) {
+const requiredCredits = 10n; // Use BigInt for safety
+if (BigInt(balance.credits) < requiredCredits) {
   throw new Error('Insufficient credits. Please top up.');
 }
 ```
@@ -269,15 +269,15 @@ interface SubmitTopUpResponse {
 
 **Example:**
 ```typescript
-// After user sends transaction
-const txHash = await wallet.sendTransaction({
+// After user's wallet sends the transaction
+const txResponse = await wallet.sendTransaction({
   to: option.to,
-  value: option.value
+  value: BigInt(option.value)
 });
 
-// Submit for monitoring
+// Submit the hash for monitoring
 const response = await earnkit.submitTopUpTransaction({
-  txHash: txHash.hash,
+  txHash: txResponse.hash,
   walletAddress: userAddress,
   amountInEth: option.amountInEth,
   creditsToTopUp: option.creditsToTopUp
@@ -311,7 +311,7 @@ interface PollingParams {
 // Get initial balance
 const initialBalance = await earnkit.getBalance({ walletAddress });
 
-// Submit top-up transaction
+// Submit top-up transaction (code from previous example)
 await earnkit.submitTopUpTransaction({
   txHash,
   walletAddress,
@@ -500,7 +500,7 @@ async function expensiveAIOperation(walletAddress: string) {
   // Check balance first for better UX
   const balance = await earnkit.getBalance({ walletAddress });
   
-  if (parseInt(balance.credits) < 50) {
+  if (BigInt(balance.credits) < 50n) { // Use BigInt for safety
     throw new Error('Insufficient credits for this operation');
   }
   
@@ -538,29 +538,6 @@ try {
 }
 ```
 
-## Fee Model Configuration
-
-The SDK works with two fee model types configured in your dashboard:
-
-### Free Tier Model
-```typescript
-interface FreeTierConfig {
-  threshold: number;  // Free prompts per wallet
-  rate: number;       // ETH charged per prompt after threshold
-}
-```
-
-### Credit-Based Model
-```typescript
-interface CreditBasedConfig {
-  creditsPerPrompt: number;
-  topUpOptions: {
-    creditAmount: number;
-    pricePerCredit: number;
-  }[];
-}
-```
-
 ## Rate Limiting & Retry Logic
 
 The SDK includes built-in retry logic for reliability:
@@ -591,8 +568,6 @@ import {
   EarnKitConfig,
   UserBalance,
   TopUpOption,
-  FreeTierConfig,
-  CreditBasedConfig,
 
   // Custom Errors
   EarnKitApiError,
