@@ -203,7 +203,7 @@ if (BigInt(balance.credits) < requiredCredits) {
 
 ### getTopUpDetails()
 
-Fetches available top-up options configured for the agent.
+Fetches available payment methods and top-up packages configured for the agent. Supports ETH, USDC, and MINIDEV on Base mainnet.
 
 ```typescript
 getTopUpDetails(): Promise<TopUpDetailsResponse>
@@ -212,32 +212,52 @@ getTopUpDetails(): Promise<TopUpDetailsResponse>
 **Returns:**
 ```typescript
 interface TopUpDetailsResponse {
+  paymentMethods: PaymentMethod[];
+  splitsConfig?: { paymentAddress: string };
+  escrowContract?: { address: string };
+}
+
+interface PaymentMethod {
+  type: "eth" | "token";
+  token?: SupportedTokenInfo;       // Present when type === "token"
   options: TopUpOption[];
+  contractFunction?: {
+    name: string;
+    signature: string;
+    approveRequired?: boolean;      // True when ERC-20 approve is needed before transfer
+  };
+}
+
+interface SupportedTokenInfo {
+  address: string;    // Token contract address on Base
+  symbol: string;     // e.g. "USDC" or "MINIDEV"
+  name: string;
+  decimals: number;
+  chainId: number;    // 8453 (Base mainnet)
 }
 
 interface TopUpOption {
-  label: string;           // Display label (e.g., "100 Credits")
-  amountInEth: string;     // ETH amount (e.g., "0.001")
-  to: string;             // Developer's deposit address
-  value: string;          // Amount in Wei for transactions
-  creditsToTopUp?: number; // Credits to add (credit-based models)
+  label: string;                      // Display label (e.g., "100 Credits")
+  amountInUSD: string;                // USD value (e.g., "5.00")
+  amountInEth?: string;               // ETH amount — present for ETH method
+  value?: string;                     // Wei amount — present for ETH method
+  amountInToken?: string;             // Atomic token units — present for ERC-20 methods
+  amountInTokenHumanReadable?: string;// Human-readable token amount (e.g., "5.00")
+  creditsToTopUp?: number;
+  discountPercent?: number;
+  originalAmountInUSD?: string;
 }
 ```
 
 **Example:**
 ```typescript
-const { options } = await earnkit.getTopUpDetails();
+const details = await earnkit.getTopUpDetails();
 
-options.forEach(option => {
-  console.log(`${option.label}: ${option.amountInEth} ETH`);
-  // Example output: "100 Credits: 0.001 ETH"
-});
-
-// Use with wallet for transaction
-const selectedOption = options[0];
-const tx = await wallet.sendTransaction({
-  to: selectedOption.to,
-  value: BigInt(selectedOption.value) // Use BigInt to avoid precision loss
+// Show available payment methods to the user (ETH / USDC / MINIDEV)
+details.paymentMethods.forEach(method => {
+  const label = method.type === "eth" ? "ETH" : method.token?.symbol ?? "Token";
+  console.log(`Pay with ${label}:`);
+  method.options.forEach(opt => console.log(`  ${opt.label} — $${opt.amountInUSD}`));
 });
 ```
 
@@ -254,7 +274,9 @@ submitTopUpTransaction(params: SubmitTopUpParams): Promise<SubmitTopUpResponse>
 interface SubmitTopUpParams {
   txHash: string;           // Transaction hash from blockchain
   walletAddress: string;    // User's wallet address
-  amountInEth: string;      // ETH amount sent
+  amountInUSD: string;      // USD value of the top-up
+  amountInEth?: string;     // ETH amount (ETH payments)
+  amountInToken?: string;   // Token amount in atomic units (ERC-20 payments)
   creditsToTopUp?: number;  // Credits to add (credit-based models)
 }
 ```
@@ -336,6 +358,51 @@ earnkit.pollForBalanceUpdate({
   maxPolls: 60        // Timeout after 5 minutes
 });
 ```
+
+## Auto Buyback & Burn
+
+Auto Buyback & Burn is an optional feature you enable at agent creation. A portion of your revenue is routed to a Turnkey-managed wallet, which automatically swaps accumulated fees to your token and burns them once a USD threshold is crossed — entirely on-chain, no manual intervention required.
+
+### How it works
+
+1. **At agent creation** — you set a buyback percentage (e.g., 10%) and a target token address. EarnKit deploys a SplitV2 contract that routes that percentage to a dedicated Turnkey wallet.
+2. **Fees accumulate** — every time fees are distributed from the split contract, the buyback wallet receives its share in ETH, USDC, or MINIDEV (whichever tokens your users paid with).
+3. **Threshold check** — after each distribution, EarnKit checks the wallet's swappable balance (excluding gas reserve). When it crosses your configured USD threshold, a buyback execution is queued.
+4. **Swap & burn** — the executor withdraws all assets from the Splits Warehouse, swaps them to your token via Uniswap V3 on Base, then calls `token.burn()` or transfers to `0x000...dEaD` depending on your burn mode.
+
+### Revenue split
+
+```
+100% of fees
+  └─ (100 - buybackPercent)%  →  your developer wallet
+  └─ buybackPercent%          →  buyback wallet (auto-swap & burn)
+
+Platform fee: 0%  — you keep everything.
+```
+
+### Execution states
+
+| Status | Meaning |
+|--------|---------|
+| `QUEUED` | Threshold crossed — execution scheduled |
+| `WITHDRAWING` | Pulling assets from Splits Warehouse to buyback wallet |
+| `SWAPPING` | Swapping ETH / USDC / MINIDEV → your token via Uniswap V3 |
+| `BURNING` | Calling `burn()` or transferring to dead address |
+| `COMPLETED` | Tokens burned successfully |
+| `RETRYING` | A step failed — will retry (up to 5 attempts with backoff) |
+| `FAILED` | All retries exhausted — use "Recover stranded funds" to retrieve assets |
+
+### Supported input tokens
+
+The buyback wallet accepts ETH, USDC, and MINIDEV as inputs. Each is independently swapped to your buyback token via the best available Uniswap V3 route (direct or two-hop via WETH). If one asset's swap fails, the others still proceed.
+
+### Dashboard controls
+
+| Action | Description |
+|--------|-------------|
+| **Trigger now** | Manually queue a buyback if the threshold is already crossed |
+| **Disable** | Pauses auto-buyback — funds stay in the wallet and can be recovered |
+| **Recover stranded funds** | Sweeps all assets from the buyback wallet back to your configured recovery address |
 
 ## Error Handling
 

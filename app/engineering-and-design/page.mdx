@@ -43,7 +43,7 @@ These core principles directly informed the key architectural decisions of the p
 To provide a seamless user experience with instant, gas-free interactions, EarnKit uses a hybrid billing model. This approach addresses the challenge of processing high-frequency, low-value transactions for each AI interaction, which would be slow and costly if handled purely on-chain.
 
 - **Off-Chain Micro-transactions:** Per-prompt fees and credit deductions are handled as atomic updates in our own database. This allows for instantaneous transactions without gas fees.
-- **On-Chain Macro-transactions:** User top-ups are standard blockchain transactions (e.g., sending ETH on Base Sepolia) directly to the developer's wallet, ensuring security and user control over their funds.
+- **On-Chain Macro-transactions:** User top-ups are standard blockchain transactions on Base mainnet — ETH, USDC, or MINIDEV sent directly to a developer-controlled split contract. EarnKit takes 0% platform fee; 100% of revenue flows to the developer (minus any buyback allocation they configure).
 
 ### 2. The `track/capture/release` Transaction Lifecycle
 
@@ -62,3 +62,18 @@ On-chain transactions can take time to confirm. To avoid forcing the user to wai
 ### 4. Idempotency for Safe Retries
 
 Network requests can time out, and clients may retry a request. To prevent accidental double-charging in such scenarios, the `track` endpoint accepts an optional `idempotencyKey`. If a developer provides a unique key for an operation (e.g., a UUID), our backend can recognize and discard any duplicate requests, guaranteeing that the user is only charged once for the same operation.
+
+### 5. Auto Buyback & Burn Pipeline
+
+The buyback system is designed around three constraints: the Turnkey wallet is immutable (baked into the on-chain SplitV2 at deploy time), swaps must be atomic per-asset to avoid one failed route stranding others, and the gas reserve must never be counted as swappable balance.
+
+- **Immutable split at creation** — the buyback wallet address is embedded in the SplitV2 contract at deploy time. There is no way to change it post-deployment, which eliminates a class of fund-redirection attacks.
+- **Operator gas drip** — the buyback wallet needs ETH to pay gas. A platform-operated Turnkey wallet drips a fixed 0.0001 ETH reserve before each execution. The Turnkey policy on this wallet restricts transfers to known buyback wallet addresses only, so a server compromise cannot reroute the gas budget.
+- **Gas reserve excluded from balance display** — the 0.0001 ETH gas reserve is subtracted before computing the USD display value and the threshold check. This prevents the UI from showing "threshold reached" when only the gas reserve exists in the wallet.
+- **Per-asset swap isolation** — each input token (ETH, USDC, MINIDEV) is swapped independently in its own try/catch. A failed USDC route does not block ETH or MINIDEV from being swapped. The burn step proceeds with whatever token balance materialised.
+- **Direct fee receipt** — if fees arrive already denominated in the buyback token (e.g., MINIDEV fees for a MINIDEV buyback agent), no swap is needed. The executor detects a non-zero token balance after the warehouse withdraw and proceeds directly to burn, bypassing the swap loop entirely.
+- **Retry with backoff** — failed executions are retried up to 5 times with delays of 1m, 5m, 30m, 2h, and 12h. After exhausting retries, assets remain on the buyback wallet and can be recovered via the dashboard's "Recover stranded funds" flow, which sweeps everything to the developer's configured recovery address.
+
+### 6. Multi-Token Payment Architecture
+
+Payment method selection is resolved server-side. `getTopUpDetails()` returns a `paymentMethods` array where each entry carries its own options, token metadata, and whether ERC-20 approval is required. The client is responsible only for signing the appropriate transaction — a native ETH send for ETH payments, or an ERC-20 `transfer` (with optional prior `approve`) for USDC and MINIDEV. This keeps the SDK wallet-agnostic and means payment method changes never require a client deploy.

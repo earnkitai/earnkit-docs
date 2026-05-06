@@ -86,56 +86,81 @@ async function handleMonetizedRequest(userWalletAddress: string) {
 
 ## 4. User Flow: Topping Up a Balance
 
-This flow shows how to use the SDK to fetch top-up options and process a user's on-chain transaction. EarnKit provides the transaction details, but your application is responsible for initiating the transaction with the user's chosen wallet library (e.g., Ethers, Viem, Privy, RainbowKit).
+EarnKit supports three payment methods on Base mainnet: **ETH**, **USDC**, and **MINIDEV**. The `getTopUpDetails()` response includes a `paymentMethods` array — one entry per supported token. Your UI should let users pick their preferred token, then send the appropriate transaction.
 
 ```typescript
-// This is a placeholder for your application's wallet logic.
-// It should take a transaction request and return a transaction hash.
-async function sendTransactionWithUserWallet(txRequest: {
-  to: string;
-  value: bigint;
-  chainId: number;
-}): Promise<{ hash: string }> {
-  // Replace this with your actual wallet library's implementation
-  // For example, using Ethers.js:
-  // const signer = provider.getSigner();
-  // const tx = await signer.sendTransaction({ to: txRequest.to, value: txRequest.value });
-  // return { hash: tx.hash };
-  throw new Error(
-    "sendTransactionWithUserWallet is a placeholder and needs to be implemented."
-  );
-}
+import { encodeFunctionData, erc20Abi, createWalletClient, custom } from 'viem';
+import { base } from 'viem/chains';
 
-async function handleTopUp(userWalletAddress: string) {
+async function handleTopUp(userWalletAddress: string, walletProvider: any) {
   try {
-    // 1. Fetch the pre-configured purchase options from your dashboard
-    const { options } = await agent.getTopUpDetails();
-    if (!options || options.length === 0) {
-      console.log("No top-up options available.");
+    // 1. Fetch available payment methods from your dashboard config
+    const details = await agent.getTopUpDetails();
+    const { paymentMethods, splitsConfig } = details;
+
+    if (!paymentMethods || paymentMethods.length === 0) {
+      console.log("No payment methods available.");
       return;
     }
 
-    // 2. Let the user select an option from your UI
-    // For this example, we'll just use the first one.
-    const selectedOption = options[0];
+    // 2. Let the user pick a payment method (ETH / USDC / MINIDEV)
+    // and a package. For this example we default to ETH, first package.
+    const method = paymentMethods.find((m) => m.type === "eth") ?? paymentMethods[0];
+    const selectedOption = method.options[0];
+    const paymentAddress = splitsConfig?.paymentAddress;
 
-    // 3. Use the user's wallet to send the on-chain transaction.
-    // The `to` and `value` come directly from the selected option.
-    const { hash: txHash } = await sendTransactionWithUserWallet({
-      to: selectedOption.to,
-      value: BigInt(selectedOption.value), // IMPORTANT: Use BigInt to avoid precision loss
-      chainId: 84532, // Example: Base Sepolia. This should match your setup.
+    if (!paymentAddress) throw new Error("Payment address not configured");
+
+    const walletClient = createWalletClient({
+      account: userWalletAddress as `0x${string}`,
+      chain: base, // Base mainnet (chainId 8453)
+      transport: custom(walletProvider),
     });
 
-    // 4. Submit the transaction hash to EarnKit for monitoring
+    let txHash: `0x${string}`;
+
+    if (method.type === "eth") {
+      // 3a. ETH payment — send native value
+      txHash = await walletClient.sendTransaction({
+        to: paymentAddress as `0x${string}`,
+        value: BigInt(selectedOption.value!),
+      });
+    } else {
+      // 3b. ERC-20 payment (USDC or MINIDEV)
+      const tokenAddress = method.token!.address as `0x${string}`;
+      const tokenAmount = BigInt(selectedOption.amountInToken!);
+
+      // Approve if required by the payment contract
+      if (method.contractFunction?.approveRequired) {
+        const approveData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [paymentAddress as `0x${string}`, tokenAmount],
+        });
+        await walletClient.sendTransaction({ to: tokenAddress, data: approveData });
+      }
+
+      // Transfer tokens to payment address
+      const transferData = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [paymentAddress as `0x${string}`, tokenAmount],
+      });
+      txHash = await walletClient.sendTransaction({ to: tokenAddress, data: transferData });
+    }
+
+    console.log("Transaction sent:", txHash);
+
+    // 4. Submit the hash to EarnKit for monitoring
     await agent.submitTopUpTransaction({
       txHash,
       walletAddress: userWalletAddress,
-      amountInEth: selectedOption.amountInEth,
+      amountInUSD: selectedOption.amountInUSD,
+      amountInEth: selectedOption.amountInEth ?? "0",
       creditsToTopUp: selectedOption.creditsToTopUp,
-    });
+    } as any);
 
-    // 5. (Optional but Recommended) Poll for the balance update for a great UX
+    // 5. Poll for balance confirmation
     const initialBalance = await agent.getBalance({ walletAddress: userWalletAddress });
 
     agent.pollForBalanceUpdate({
@@ -143,18 +168,22 @@ async function handleTopUp(userWalletAddress: string) {
       initialBalance,
       onConfirmation: (newBalance) => {
         console.log("Top-up successful! New balance:", newBalance);
-        // Update your UI here
       },
       onTimeout: () => {
-        console.log(
-          "Confirmation is taking longer than expected. Please check back soon."
-        );
+        console.log("Confirmation is taking longer than expected. Please check back soon.");
       },
     });
 
   } catch (error) {
     console.error("Top-up failed:", error);
-    // Handle errors in your UI
   }
 }
 ```
+
+### Supported payment tokens
+
+| Token | Network | Notes |
+|-------|---------|-------|
+| ETH | Base mainnet | Native — no approval needed |
+| USDC | Base mainnet | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| MINIDEV | Base mainnet | `0x534b7aad1cdb6f02ec48cabe428f0d9131e40b07` |
