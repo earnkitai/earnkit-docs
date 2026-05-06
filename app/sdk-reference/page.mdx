@@ -19,7 +19,8 @@ Configuration object for initializing the SDK.
 ```typescript
 interface EarnKitConfig {
   agentId: string;           // Required: Your agent ID from the dashboard
-  baseUrl?: string;          // Optional: API base URL (default: http://localhost:3000)
+  apiKey: string;            // Required: Your API key from the dashboard
+  baseUrl?: string;          // Optional: API base URL (default: https://api.earnkit.com)
   debug?: boolean;           // Optional: Enable debug logging (default: false)
   requestTimeoutMs?: number; // Optional: Request timeout (default: 30000ms)
 }
@@ -28,8 +29,8 @@ interface EarnKitConfig {
 **Example:**
 ```typescript
 const earnkit = new EarnKit({
-  agentId: 'clxxxxx', // CUID from your dashboard
-  baseUrl: 'https://api.yourapp.com',
+  agentId: process.env.EARNKIT_AGENT_ID!,
+  apiKey: process.env.EARNKIT_API_KEY!,
   debug: process.env.NODE_ENV === 'development',
   requestTimeoutMs: 60000 // 60 seconds
 });

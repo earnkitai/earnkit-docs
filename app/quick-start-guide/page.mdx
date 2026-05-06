@@ -22,14 +22,9 @@ Import and instantiate the `EarnKit` class. You should only do this once per age
 import { EarnKit, EarnKitApiError } from 'earnkit-sdk';
 
 const agent = new EarnKit({
-  // Your Agent ID from the EarnKit Dashboard
-  agentId: process.env.YOUR_AGENT_ID!,
-
-  // The base URL for the EarnKit API
-  baseUrl: process.env.EARNKIT_API_URL!, // https://api.earnkit.com
-
-  // Optional: Enable for development logging
-  debug: true,
+  agentId: process.env.EARNKIT_AGENT_ID!,
+  apiKey: process.env.EARNKIT_API_KEY!,
+  debug: process.env.NODE_ENV === 'development',
 });
 ```
 
