@@ -2,6 +2,25 @@
 
 This guide provides practical, framework-agnostic examples for integrating the EarnKit SDK into any application. The snippets are designed to be copy-paste ready, with clear placeholders for your own logic.
 
+## 0. Get Your Credentials
+
+You need an `agentId` and `apiKey` before writing any code.
+
+1. Go to [app.earnkit.com](https://app.earnkit.com) and sign up or log in.
+2. Click **Create Agent** and configure:
+   - Agent name
+   - Price per call (in credits)
+   - Buyback % and token address *(optional — can be skipped)*
+3. Open the agent and go to the **API Keys** tab.
+4. Copy your **Agent ID** and **API Key** and add them to your environment:
+
+```bash
+EARNKIT_AGENT_ID=your_agent_id_here
+EARNKIT_API_KEY=your_api_key_here
+```
+
+---
+
 ## 1. Installation
 
 First, add the EarnKit SDK to your project.
