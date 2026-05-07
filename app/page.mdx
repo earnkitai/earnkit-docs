@@ -2,26 +2,21 @@
 
 Welcome to the EarnKit documentation!
 
-EarnKit is a monetization toolkit designed to help developers effortlessly add usage-based billing to their AI agents. Whether you want to offer a free trial, charge per use, or implement a sophisticated credit system, EarnKit provides the backend, SDK, and developer dashboard to get you up and running in minutes.
+EarnKit is a monetization toolkit that lets developers add usage-based billing to AI agents **and** automatically convert a portion of that revenue into buy pressure for their token — on-chain, with zero manual steps.
 
-## The Core Problem
+## What Makes EarnKit Different
 
-Monetizing AI agents is complex. You need to:
-- Securely process micro-transactions without high gas fees.
-- Handle different pricing models (e.g., subscriptions, pay-as-you-go).
-- Prevent users from being charged for failed AI responses.
-- Provide a seamless top-up experience for end-users.
-- Track usage and revenue.
+Most monetization platforms stop at payments. EarnKit goes further with **Auto Buyback & Burn** — every credit purchase your users make can automatically trigger a token buyback and burn on Base. You set a percentage, pick a threshold, and EarnKit handles the rest: fee collection, swapping via Uniswap V3, and burning. No cron jobs. No multisig. No manual execution.
 
-## The EarnKit Solution
+**Platform fee: 0%.** You keep 100% of revenue (minus whatever you choose to allocate to buyback).
 
-EarnKit solves these problems with a hybrid on-chain/off-chain architecture and a simple, powerful SDK.
+## The Full Feature Set
 
-- **Off-Chain Speed:** All per-prompt charges happen off-chain in our database for instant, gas-free transactions.
-- **On-Chain Security:** User top-ups are standard on-chain transactions (ETH, USDC, or MINIDEV on Base) sent directly to your developer wallet — 0% platform fee, you keep everything.
-- **Reliable Billing:** Our `track`/`capture`/`release` flow ensures users are only billed for successful AI operations.
-- **Auto Buyback & Burn:** Optionally route a portion of revenue into an automated buyback-and-burn pipeline for your token — fully on-chain, Turnkey-managed, no manual steps.
-- **Developer Dashboard:** Manage your agents, configure fee models, and view usage logs all in one place.
+- **Reliable Billing** — the `track`/`capture`/`release` pattern ensures users are never charged for a failed AI response.
+- **Multi-Token Payments** — users top up with ETH, USDC, or MINIDEV on Base. Payment logic is server-side; your client just signs a transaction.
+- **Auto Buyback & Burn** — route a configurable percentage of every top-up into an automated on-chain buyback pipeline for your token. [Learn more →](./buyback-and-burn)
+- **Off-Chain Speed** — per-prompt charges happen in the database for instant, gas-free billing.
+- **Developer Dashboard** — manage agents, configure fee models, view usage logs, and monitor buyback executions.
 
 ## Demonstration
 
@@ -38,15 +33,9 @@ EarnKit solves these problems with a hybrid on-chain/off-chain architecture and 
 	</div>
 </div>
 
-
 ## How to Get Started
 
-- **[Quick Start Guide](./quick-start-guide):** A step-by-step guide to integrating EarnKit into your application.
-- **[SDK Reference](./sdk-reference):** Quick start guide and dive into the SDK's methods and see detailed code examples. 
-
-## Next Steps
-
-Ready to explore EarnKit? 
-
-1. **Quick Start Guide**: Follow the [quick start guide](./quick-start-guide) to get started.
-2. **SDK**: Review the [SDK documentation](./sdk-reference) and API endpoints
+- **[Quick Start Guide](./quick-start-guide):** Integrate billing into your agent in minutes.
+- **[SDK Reference](./sdk-reference):** Full API reference with typed examples.
+- **[Buyback & Burn](./buyback-and-burn):** How the on-chain buyback pipeline works and how to enable it.
+- **[Engineering & Design](./engineering-and-design):** Architecture decisions and trade-offs.

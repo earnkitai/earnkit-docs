@@ -11,6 +11,9 @@ export default {
 	"sdk-reference": {
 		title: "SDK Reference",
 	},
+	"buyback-and-burn": {
+		title: "Buyback & Burn",
+	},
 	"engineering-and-design": {
 		title: "Engineering & Design",
 	},
