@@ -9,7 +9,7 @@ export default {
 		title: "Buyback & Burn",
 	},
 "monetization-sdk": {
-		title: "Monetization SDK (Deprecated)",
+		display: "hidden",
 	},
 	"quick-start-guide": {
 		display: "hidden",
