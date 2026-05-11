@@ -8,7 +8,7 @@ EarnKit is a **token buyback-as-a-service** platform. Connect any on-chain reven
 
 When on-chain fees accumulate in your buyback wallet, EarnKit automatically swaps them to your target token via Uniswap V3 and burns them. No cron jobs. No multisig. No manual execution.
 
-**Platform fee: 5% per execution** — deducted from the swap input before the buyback runs.
+**Platform fee: 1% per execution** — deducted from the swap input before the buyback runs.
 
 ## How It Works
 
@@ -30,7 +30,7 @@ Connect any existing **0xSplits V2** contract (Clanker, Doppler, or custom) to a
 Fee revenue → Splits contract / Fee recipient
                  └── EarnKit buyback wallet (Turnkey-managed)
                           └── threshold crossed?
-                               ├── yes → deduct 5% platform fee
+                               ├── yes → deduct 1% platform fee
                                │         → swap remaining → your token → burn
                                └── no  → accumulates
 ```

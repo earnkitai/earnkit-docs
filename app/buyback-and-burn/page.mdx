@@ -7,7 +7,7 @@ Connect any existing splits contract to automated buyback & burn — without giv
 EarnKit provisions a Turnkey-managed wallet and sets it as the fee recipient on your splits contract. From that point on, every fee distribution that lands in the wallet is automatically swapped to your target token via Uniswap V3 and burned — once the configurable USD threshold is crossed.
 
 <Callout type="info">
-  **Platform fee: 5% per execution.** The fee is deducted from the total swap input before the buyback runs. For example, if $100 has accumulated, $5 goes to the platform and $95 is swapped into your token and burned.
+  **Platform fee: 1% per execution.** The fee is deducted from the total swap input before the buyback runs. For example, if $100 has accumulated, $1 goes to the platform and $99 is swapped into your token and burned. If $200 has accumulated, $2 goes to the platform and $198 is swapped and burned.
 </Callout>
 
 ---
@@ -28,7 +28,7 @@ EarnKit provisions a Turnkey-managed wallet and sets it as the fee recipient on 
 Fees distributed to split contract
   └── EarnKit buyback wallet receives its allocation
            └── threshold crossed?
-                ├── yes → deduct 5% platform fee
+                ├── yes → deduct 1% platform fee
                 │         → withdraw from Splits Warehouse (if pull-split)
                 │         → swap ETH / USDC / MINIDEV → your token (Uniswap V3)
                 │         → burn (burn() or transfer to 0x000...dEaD)
@@ -72,8 +72,8 @@ With $200 accumulated in the buyback wallet:
 
 ```
 $200 total swappable balance
-  ├── $10  → EarnKit platform fee (5%)
-  └── $190 → swapped to your token → burned
+  ├── $2   → EarnKit platform fee (1%)
+  └── $198 → swapped to your token → burned
 ```
 
 ---
