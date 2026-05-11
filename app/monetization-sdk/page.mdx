@@ -1,0 +1,325 @@
+import { Callout } from 'nextra/components'
+
+# Monetization SDK
+
+<Callout type="error">
+  **Deprecated.** The EarnKit Monetization SDK (usage-based billing for AI agents) has been discontinued. EarnKit is now focused exclusively on the **token buyback & burn service** for on-chain revenue streams. See the [Introduction](/) and [Buyback & Burn](/buyback-and-burn) pages for current documentation. Existing SDK integrations will continue to function but will not receive new features or updates.
+</Callout>
+
+---
+
+The content below is preserved for reference by existing integrations.
+
+---
+
+## Quick Start Guide
+
+This guide provides practical, framework-agnostic examples for integrating the EarnKit SDK into any application.
+
+### 0. Get Your Credentials
+
+You need an `agentId` and `apiKey` before writing any code.
+
+1. Go to [app.earnkit.com](https://app.earnkit.com) and sign up or log in.
+2. Click **Create Agent** and configure:
+   - Agent name
+   - Price per call (in credits)
+   - Buyback % and token address *(optional)*
+3. Open the agent and go to the **API Keys** tab.
+4. Copy your **Agent ID** and **API Key** and add them to your environment:
+
+```bash
+EARNKIT_AGENT_ID=your_agent_id_here
+EARNKIT_API_KEY=your_api_key_here
+```
+
+### 1. Installation
+
+```bash
+pnpm add earnkit-sdk
+# or
+yarn add earnkit-sdk
+# or
+npm install earnkit-sdk
+```
+
+### 2. Initialization
+
+```typescript
+import { EarnKit, EarnKitApiError } from 'earnkit-sdk';
+
+const agent = new EarnKit({
+  agentId: process.env.EARNKIT_AGENT_ID!,
+  apiKey: process.env.EARNKIT_API_KEY!,
+  debug: process.env.NODE_ENV === 'development',
+});
+```
+
+### 3. Core Flow: Charging for a Request
+
+```typescript
+async function handleMonetizedRequest(userWalletAddress: string) {
+  let eventId: string | null = null;
+
+  try {
+    const trackResponse = await agent.track({
+      walletAddress: userWalletAddress,
+    });
+    eventId = trackResponse.eventId;
+
+    const result = await yourCustomFunction();
+
+    await agent.capture({ eventId });
+
+    return result;
+
+  } catch (error) {
+    if (eventId) {
+      await agent.release({ eventId });
+    }
+
+    if (error instanceof EarnKitApiError) {
+      throw new Error(`API Error: ${error.message}`);
+    } else {
+      throw new Error("An unexpected error occurred.");
+    }
+  }
+}
+```
+
+### 4. User Flow: Topping Up a Balance
+
+```typescript
+import { encodeFunctionData, erc20Abi, createWalletClient, custom } from 'viem';
+import { base } from 'viem/chains';
+
+async function handleTopUp(userWalletAddress: string, walletProvider: any) {
+  try {
+    const details = await agent.getTopUpDetails();
+    const { paymentMethods, splitsConfig } = details;
+
+    const method = paymentMethods.find((m) => m.type === "eth") ?? paymentMethods[0];
+    const selectedOption = method.options[0];
+    const paymentAddress = splitsConfig?.paymentAddress;
+
+    if (!paymentAddress) throw new Error("Payment address not configured");
+
+    const walletClient = createWalletClient({
+      account: userWalletAddress as `0x${string}`,
+      chain: base,
+      transport: custom(walletProvider),
+    });
+
+    let txHash: `0x${string}`;
+
+    if (method.type === "eth") {
+      txHash = await walletClient.sendTransaction({
+        to: paymentAddress as `0x${string}`,
+        value: BigInt(selectedOption.value!),
+      });
+    } else {
+      const tokenAddress = method.token!.address as `0x${string}`;
+      const tokenAmount = BigInt(selectedOption.amountInToken!);
+
+      if (method.contractFunction?.approveRequired) {
+        const approveData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [paymentAddress as `0x${string}`, tokenAmount],
+        });
+        await walletClient.sendTransaction({ to: tokenAddress, data: approveData });
+      }
+
+      const transferData = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [paymentAddress as `0x${string}`, tokenAmount],
+      });
+      txHash = await walletClient.sendTransaction({ to: tokenAddress, data: transferData });
+    }
+
+    await agent.submitTopUpTransaction({
+      txHash,
+      walletAddress: userWalletAddress,
+      amountInUSD: selectedOption.amountInUSD,
+      amountInEth: selectedOption.amountInEth ?? "0",
+      creditsToTopUp: selectedOption.creditsToTopUp,
+    } as any);
+
+    const initialBalance = await agent.getBalance({ walletAddress: userWalletAddress });
+
+    agent.pollForBalanceUpdate({
+      walletAddress: userWalletAddress,
+      initialBalance,
+      onConfirmation: (newBalance) => {
+        console.log("Top-up successful! New balance:", newBalance);
+      },
+      onTimeout: () => {
+        console.log("Confirmation is taking longer than expected. Please check back soon.");
+      },
+    });
+
+  } catch (error) {
+    console.error("Top-up failed:", error);
+  }
+}
+```
+
+**Supported payment tokens:**
+
+| Token | Network | Notes |
+|-------|---------|-------|
+| ETH | Base mainnet | Native — no approval needed |
+| USDC | Base mainnet | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| MINIDEV | Base mainnet | `0x534b7aad1cdb6f02ec48cabe428f0d9131e40b07` |
+
+---
+
+## SDK Reference
+
+### Configuration
+
+```typescript
+interface EarnKitConfig {
+  agentId: string;           // Required: Your agent ID from the dashboard
+  apiKey: string;            // Required: Your API key from the dashboard
+  baseUrl?: string;          // Optional: API base URL (default: https://api.earnkit.com)
+  debug?: boolean;           // Optional: Enable debug logging (default: false)
+  requestTimeoutMs?: number; // Optional: Request timeout (default: 30000ms)
+}
+```
+
+### track()
+
+Initiates a billable event with provisional charging.
+
+```typescript
+track(params: TrackParams): Promise<{ eventId: string }>
+
+interface TrackParams {
+  walletAddress: string;
+  idempotencyKey?: string;
+  creditsToDeduct?: number;
+}
+```
+
+### capture()
+
+Finalizes a pending usage event, confirming the charge.
+
+```typescript
+capture(params: { eventId: string }): Promise<{ success: boolean }>
+```
+
+### release()
+
+Releases a pending usage event, refunding any provisional charges.
+
+```typescript
+release(params: { eventId: string }): Promise<{ success: boolean }>
+```
+
+### getBalance()
+
+Retrieves the current ETH and credit balances for a wallet.
+
+```typescript
+getBalance(params: { walletAddress: string }): Promise<{ eth: string; credits: string }>
+```
+
+### getTopUpDetails()
+
+Fetches available payment methods and top-up packages.
+
+```typescript
+getTopUpDetails(): Promise<TopUpDetailsResponse>
+
+interface TopUpDetailsResponse {
+  paymentMethods: PaymentMethod[];
+  splitsConfig?: { paymentAddress: string };
+  escrowContract?: { address: string };
+}
+```
+
+### submitTopUpTransaction()
+
+Submits a completed transaction hash for monitoring and credit processing.
+
+```typescript
+submitTopUpTransaction(params: SubmitTopUpParams): Promise<{ status: string; message: string }>
+
+interface SubmitTopUpParams {
+  txHash: string;
+  walletAddress: string;
+  amountInUSD: string;
+  amountInEth?: string;
+  amountInToken?: string;
+  creditsToTopUp?: number;
+}
+```
+
+### pollForBalanceUpdate()
+
+Polls for balance changes after a top-up.
+
+```typescript
+pollForBalanceUpdate(params: PollingParams): void
+
+interface PollingParams {
+  walletAddress: string;
+  initialBalance: { eth: string; credits: string };
+  onConfirmation: (newBalance: { eth: string; credits: string }) => void;
+  onTimeout?: () => void;
+  pollInterval?: number; // Default: 10000ms
+  maxPolls?: number;     // Default: 30
+}
+```
+
+### Error Types
+
+```typescript
+import {
+  EarnKitInitializationError, // Invalid SDK config at init time
+  EarnKitInputError,          // Invalid method parameters
+  EarnKitApiError             // API call failed (has .status and .message)
+} from 'earnkit-sdk';
+```
+
+`EarnKitApiError` status codes:
+- `402` — Insufficient funds/credits
+- `404` — Agent or event not found
+- `500` — Server error (SDK retries automatically)
+
+---
+
+## Engineering & Design
+
+### Architecture
+
+EarnKit used a hybrid billing model: per-prompt charges were handled off-chain (atomic database updates, instant and gas-free), while top-ups were standard on-chain transactions on Base mainnet.
+
+### track / capture / release Lifecycle
+
+- `track()` — places a temporary hold on the user's balance before the AI operation runs.
+- `capture()` — finalizes the charge after a successful response.
+- `release()` — cancels the hold if the operation fails. Users are never charged for failed calls.
+
+This two-step pattern adds a small integration overhead but is necessary to guarantee fair billing.
+
+### Asynchronous Top-Up
+
+On-chain transactions take time to confirm. The top-up flow is fully asynchronous: the client submits the `txHash`, the UI responds immediately, and a background process monitors the chain for confirmation before crediting the balance.
+
+### Idempotency
+
+The `track` endpoint accepts an optional `idempotencyKey`. If provided, the backend discards duplicate requests with the same key — preventing double-charges on client retries.
+
+### Multi-Token Payments
+
+Payment method selection is resolved server-side via `getTopUpDetails()`. The client is only responsible for signing the transaction. Payment method changes never require a client redeploy.
+
+### Retry Logic
+
+- Up to 2 automatic retries (3 total attempts) for 5xx errors and timeouts
+- Exponential backoff: 1s, 2s, 4s
+- Default request timeout: 30 seconds (configurable)

@@ -1,68 +1,80 @@
 import { Callout } from 'nextra/components'
 
-# Auto Buyback & Burn
+# Splits Buyback & Burn
 
-Turn every credit purchase into buy pressure for your token — automatically, on-chain, with zero manual steps.
+Connect any existing splits contract to automated buyback & burn — without giving up custody.
 
-When you enable Auto Buyback & Burn, a percentage of every top-up your users make is routed to a dedicated wallet that automatically swaps accumulated fees to your token and burns them. No cron jobs to manage. No multisig to coordinate. No manual execution.
+EarnKit provisions a Turnkey-managed wallet and sets it as the fee recipient on your splits contract. From that point on, every fee distribution that lands in the wallet is automatically swapped to your target token via Uniswap V3 and burned — once the configurable USD threshold is crossed.
 
 <Callout type="info">
-  **This is a zero-fee feature.** EarnKit takes 0% of your revenue. The buyback allocation comes from the developer's share — you decide how much of your own revenue to route into buyback.
+  **Platform fee: 5% per execution.** The fee is deducted from the total swap input before the buyback runs. For example, if $100 has accumulated, $5 goes to the platform and $95 is swapped into your token and burned.
 </Callout>
+
+---
+
+## Supported Contracts
+
+| Protocol | Contract type | Notes |
+|----------|--------------|-------|
+| Clanker | Push-split (0xSplits V2) | Fee recipient must be set to EarnKit wallet |
+| Doppler | Pull-split (0xSplits V2) | Standard warehouse withdraw supported |
+| Custom 0xSplits V2 | Push or pull | Any V2 split with a configurable fee recipient |
 
 ---
 
 ## How It Works
 
 ```
-User tops up → Split contract distributes fees
-                ├── (100 - buybackPercent)%  → your developer wallet (immediate)
-                └── buybackPercent%          → buyback wallet
-                                                  └── threshold crossed?
-                                                        ├── yes → swap to your token → burn
-                                                        └── no  → accumulates
+Fees distributed to split contract
+  └── EarnKit buyback wallet receives its allocation
+           └── threshold crossed?
+                ├── yes → deduct 5% platform fee
+                │         → withdraw from Splits Warehouse (if pull-split)
+                │         → swap ETH / USDC / MINIDEV → your token (Uniswap V3)
+                │         → burn (burn() or transfer to 0x000...dEaD)
+                └── no  → accumulates until threshold
 ```
 
 ### Step by step
 
-1. **Agent creation** — you set a buyback percentage (e.g. 10%) and your token's contract address. EarnKit deploys a SplitV2 contract on Base that permanently routes that share to a Turnkey-managed buyback wallet.
+1. **Register** — paste your splits contract address in the EarnKit dashboard. A Turnkey-managed buyback wallet is provisioned for you.
 
-2. **Fees accumulate** — every time a user pays (ETH, USDC, or MINIDEV), your portion goes to your wallet instantly and the buyback share lands in the Turnkey wallet.
+2. **Set fee recipient** — update the fee recipient on your splits contract to point to the provisioned wallet address. EarnKit shows you exactly what transaction to send (or pre-fills a Safe TX Builder link if you're using a multisig).
 
-3. **Threshold check** — after each distribution, EarnKit checks the wallet's swappable USD value (gas reserve excluded). Once it crosses your configured threshold, a buyback execution is queued.
+3. **Fees accumulate** — every distribution that reaches the wallet is tracked. EarnKit checks the swappable USD value after each receipt.
 
-4. **Swap & burn** — assets are withdrawn from the Splits Warehouse, swapped to your token via Uniswap V3 on Base, then burned by calling `burn()` on your token contract (or transferred to `0x000...dEaD` if your token doesn't implement `burn()`).
+4. **Threshold triggered** — once the wallet's swappable balance crosses your configured threshold (minimum $10, default $10), a buyback execution is queued.
+
+5. **Swap & burn** — the platform fee is deducted, assets are withdrawn from the Splits Warehouse (for pull-splits), swapped to your target token via the best available Uniswap V3 route, and burned.
 
 ---
 
-## Enabling It
+## Setting Up
 
-Buyback is configured at agent creation time in the EarnKit dashboard.
+You configure buybacks at registration time in the [EarnKit dashboard](https://app.earnkit.com).
 
 | Setting | Description |
 |---------|-------------|
-| **Buyback %** | Percentage of fees routed to the buyback wallet (e.g. `10` = 10%) |
-| **Token address** | The ERC-20 token to buy and burn on Base |
-| **USD threshold** | Minimum swappable balance before execution triggers (e.g. `$100`) |
+| **Splits contract address** | The 0xSplits V2 contract already receiving your fees |
+| **Target token address** | The ERC-20 token to buy and burn on Base |
+| **USD threshold** | Minimum swappable balance before execution triggers (min $10) |
 | **Recovery address** | Where to sweep funds if execution fails after all retries |
 
 <Callout type="warning">
-  The buyback wallet address is embedded in the SplitV2 contract **at deploy time** and cannot be changed. Choose your settings carefully before creating the agent.
+  The buyback wallet address is embedded at registration time and cannot be changed. If you need to update it, you would need to re-register and update the fee recipient on your contract again.
 </Callout>
 
 ---
 
-## Revenue Split Example
+## Fee Example
 
-With a 10% buyback allocation on a $100/month agent:
+With $200 accumulated in the buyback wallet:
 
 ```
-$100 in user top-ups
-  ├── $90  → your developer wallet
-  └── $10  → buyback wallet → swapped to your token → burned
+$200 total swappable balance
+  ├── $10  → EarnKit platform fee (5%)
+  └── $190 → swapped to your token → burned
 ```
-
-Platform fee: **0%**. You keep everything not allocated to buyback.
 
 ---
 
@@ -70,23 +82,24 @@ Platform fee: **0%**. You keep everything not allocated to buyback.
 
 | State | What's happening |
 |-------|-----------------|
-| `QUEUED` | Threshold crossed — execution is scheduled |
+| `PENDING` | Registered — waiting for the first fee receipt |
+| `ACTIVE` | Monitoring — accumulating fees, threshold not yet crossed |
+| `QUEUED` | Threshold crossed — execution scheduled |
 | `WITHDRAWING` | Pulling assets from Splits Warehouse to the buyback wallet |
 | `SWAPPING` | Swapping ETH / USDC / MINIDEV → your token via Uniswap V3 |
 | `BURNING` | Calling `burn()` or transferring to `0x000...dEaD` |
 | `COMPLETED` | Tokens burned successfully |
 | `RETRYING` | A step failed — retrying with backoff (up to 5 attempts: 1m, 5m, 30m, 2h, 12h) |
 | `FAILED` | All retries exhausted — use "Recover stranded funds" to retrieve assets |
+| `BROKEN` | Permanent error detected — contact support or re-register |
 
 ---
 
 ## Supported Input Tokens
 
-The buyback wallet accepts ETH, USDC, and MINIDEV as inputs. Each is independently swapped to your buyback token via the best available Uniswap V3 route (direct or two-hop via WETH).
+The buyback wallet accepts ETH, USDC, and MINIDEV as fee inputs. Each is independently swapped to your buyback token. If one asset's swap fails, the others still proceed.
 
-If one asset's swap fails, the others still proceed — a failed USDC route will not block ETH or MINIDEV from being swapped and burned.
-
-**Special case:** if fees arrive already denominated in your buyback token (e.g. a MINIDEV agent with MINIDEV buyback configured), no swap is needed. The executor detects the token balance after the warehouse withdraw and proceeds directly to burn.
+**Special case:** if fees arrive already denominated in your target token, no swap is needed — the executor proceeds directly to burn.
 
 ---
 
@@ -94,34 +107,34 @@ If one asset's swap fails, the others still proceed — a failed USDC route will
 
 | Action | Description |
 |--------|-------------|
-| **Trigger now** | Manually queue a buyback if the threshold is already crossed |
-| **Disable** | Pause auto-buyback — funds stay in the wallet and can be recovered |
+| **View wallet** | See the provisioned buyback wallet address to use as fee recipient |
+| **Execution history** | View past buyback executions with amounts and status |
 | **Recover stranded funds** | Sweep all assets from the buyback wallet to your recovery address |
 
 ---
 
 ## Security Design
 
-- **Immutable split** — the buyback wallet address is baked into the SplitV2 contract at deploy time. There is no admin key that can redirect funds post-deployment.
-- **Operator gas drip** — the buyback wallet needs ETH for gas. A platform-operated Turnkey wallet drips a fixed 0.0001 ETH reserve before each execution. The Turnkey policy restricts transfers to known buyback wallet addresses only.
-- **Gas reserve excluded** — the 0.0001 ETH gas reserve is subtracted before computing the swappable balance, so the threshold check is never falsely triggered by the gas drip alone.
-- **Per-asset isolation** — each input token is swapped in its own try/catch, preventing one failed route from blocking others.
+- **Non-custodial** — you remain the owner of your splits contract. The buyback wallet is only the fee recipient, not a contract admin.
+- **Immutable wallet** — the buyback wallet address cannot be changed post-registration. No server compromise can redirect your fees.
+- **Operator gas drip** — EarnKit drips a small ETH reserve (0.0001 ETH) before each execution. Gas cost is excluded from the swappable balance check so it never falsely triggers the threshold.
+- **Per-asset swap isolation** — each token is swapped in its own try/catch. A failed USDC route will not block ETH or MINIDEV from being swapped and burned.
 
 ---
 
 ## FAQ
 
-**Can I change the buyback percentage after creating the agent?**
-No. The split is on-chain and immutable. You would need to create a new agent with updated settings.
+**Can I change the target token after registering?**
+No. The buyback wallet and its Turnkey policy are fixed at registration. You would need to re-register.
 
 **What happens if my token doesn't have a `burn()` function?**
 EarnKit transfers the tokens to `0x000000000000000000000000000000000000dEaD` (the dead address).
 
-**What if the buyback wallet runs out of ETH for gas?**
-The platform drips 0.0001 ETH before each execution attempt. If the drip fails, the execution is retried with backoff.
-
-**Can I use any ERC-20 as my buyback token?**
-Yes — any ERC-20 on Base with a Uniswap V3 pool. The executor finds the best route automatically.
-
 **What if execution fails permanently?**
-After 5 retries, the execution status is set to `FAILED`. Use **Recover stranded funds** in the dashboard to sweep all assets to your recovery address.
+After 5 retries, use **Recover stranded funds** in the dashboard to sweep all assets to your recovery address.
+
+**Can I use any ERC-20 as my target token?**
+Yes — any ERC-20 on Base with a Uniswap V3 pool. The executor finds the best route automatically (direct or two-hop via WETH).
+
+**I use Clanker and all view functions on my split revert. Will this work?**
+Yes. Clanker uses push-splits where state lives in the factory, not on the contract. EarnKit handles this — executions are activated manually via the dashboard after your fee recipient is set.
