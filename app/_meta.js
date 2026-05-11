@@ -11,4 +11,13 @@ export default {
 "monetization-sdk": {
 		title: "Monetization SDK (Deprecated)",
 	},
+	"quick-start-guide": {
+		display: "hidden",
+	},
+	"sdk-reference": {
+		display: "hidden",
+	},
+	"engineering-and-design": {
+		display: "hidden",
+	},
 };
