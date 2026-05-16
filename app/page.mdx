@@ -2,39 +2,44 @@
 
 Welcome to the EarnKit documentation.
 
-EarnKit is a **token buyback-as-a-service** platform. Connect any on-chain revenue stream — splits contracts, fee recipients, or token contracts — to fully automated buyback & burn, with zero manual steps.
+EarnKit is a **token buyback-as-a-service** platform. Connect any on-chain revenue stream — token contracts, launchpad LP lockers, or existing 0xSplits contracts — to fully automated buyback & burn, with zero ongoing manual steps.
 
 ## What EarnKit Does
 
-When on-chain fees accumulate in your buyback wallet, EarnKit automatically swaps them to your target token via Uniswap V3 and burns them. No cron jobs. No multisig. No manual execution.
+Every buyback runs through a **0xSplits V2 PullSplit** contract you control. The split routes fee revenue between you (the owner) and an EarnKit-managed **buyback wallet** at percentages you choose. When the buyback wallet's accumulated share crosses your USD threshold, EarnKit swaps it to your target token via Uniswap V3 and burns it.
 
-**Platform fee: 1% per execution** — deducted from the swap input before the buyback runs.
-
-## How It Works
-
-Connect any existing **0xSplits V2** contract (Clanker, Doppler, or custom) to automated buyback & burn. EarnKit provisions a Turnkey-managed wallet, you set it as the fee recipient on your splits contract, and revenue automatically flows into token burns.
-
-→ [Full details](./buyback-and-burn)
+**Platform fee: 1% per execution** — deducted from the buyback wallet's swappable balance before swap+burn. The owner's share is paid directly via the split, untouched by EarnKit.
 
 ## How to Get Started
 
 1. Go to [app.earnkit.com](https://app.earnkit.com) and sign in.
-2. Navigate to **Create Buybacks** in the sidebar.
-3. Paste your splits contract address and follow the setup flow.
-4. Set the provisioned wallet as the fee recipient on your contract.
-5. Revenue accumulates and triggers automatic buyback & burn once the threshold is crossed.
+2. Open **Create** in the sidebar.
+3. Pick a card:
+   - **Token** — you have a token but no split yet. We provision the buyback wallet and you deploy a fresh split with one tx.
+   - **Splits** — you already have a 0xSplits V2 contract; we just slot in as one of its recipients.
+4. Point your fee revenue at the split:
+   - **Clanker v4 / v3** — one-click button in the dashboard.
+   - **Vanilla ERC-20** with a `setFeeRecipient`-style setter — one-click on the detail page.
+   - **Otherwise** — manual via your launchpad's admin UI or BaseScan.
+5. Revenue accumulates → threshold crossed → automatic swap & burn. Forever.
+
+→ [Full details](./buyback-and-burn)
 
 ## Architecture Overview
 
 ```
-Fee revenue → Splits contract / Fee recipient
-                 └── EarnKit buyback wallet (Turnkey-managed)
-                          └── threshold crossed?
-                               ├── yes → deduct 1% platform fee
-                               │         → swap remaining → your token → burn
-                               └── no  → accumulates
+Your fee source (token contract, LP locker, etc.)
+    └── 0xSplits V2 PullSplit (you own it)
+            ├── owner share         → your wallet (via 0xSplits warehouse)
+            └── buyback share       → EarnKit-managed buyback wallet
+                     └── threshold crossed?
+                          ├── yes → 1% platform fee
+                          │         → swap → your target token (Uniswap V3)
+                          │         → burn
+                          └── no  → keeps accumulating
 ```
 
-- **Non-custodial** — you remain the owner of your splits or token contract at all times. The buyback wallet is only the fee recipient.
-- **Immutable at registration** — the buyback wallet address is baked in at setup time. There is no admin key that can redirect funds.
-- **Operator gas** — EarnKit drips a small ETH reserve before each execution so the buyback wallet always has gas. Gas is excluded from the swappable balance check.
+- **Non-custodial.** You own the split. You own the token contract. EarnKit operates only the buyback wallet, and its Turnkey policy is locked to swap-and-burn-or-recover.
+- **Immutable buyback wallet.** The wallet address is baked in at registration. No admin key — yours or ours — can rotate it.
+- **Recovery built in.** Every config sets a recovery address at registration; the Turnkey policy permits sweeping all funds there if anything goes permanently wrong.
+- **Operator gas drip.** EarnKit funds gas for each execution so your buyback wallet never holds ETH for fees beyond what's needed. Drip is excluded from the threshold check.

@@ -1,140 +1,205 @@
 import { Callout } from 'nextra/components'
 
-# Splits Buyback & Burn
+# Buyback & Burn
 
-Connect any existing splits contract to automated buyback & burn — without giving up custody.
+EarnKit turns any on-chain fee revenue into automatic buyback & burn — with the user retaining custody of every contract along the way.
 
-EarnKit provisions a Turnkey-managed wallet and sets it as the fee recipient on your splits contract. From that point on, every fee distribution that lands in the wallet is automatically swapped to your target token via Uniswap V3 and burned — once the configurable USD threshold is crossed.
+Under the hood, every buyback is anchored on a **0xSplits V2 PullSplit** contract that you (the project owner) control. The split routes your fee revenue between yourself and an EarnKit-managed **buyback wallet**. When the buyback wallet's share crosses a USD threshold, EarnKit swaps it to your target token and burns it.
 
 <Callout type="info">
-  **Platform fee: 1% per execution.** The fee is deducted from the total swap input before the buyback runs. For example, if $100 has accumulated, $1 goes to the platform and $99 is swapped into your token and burned. If $200 has accumulated, $2 goes to the platform and $198 is swapped and burned.
+  **Platform fee: 1% per execution.** Deducted from the buyback wallet's swappable balance before swap+burn runs. The owner's share is paid directly via the split contract — EarnKit never touches it.
 </Callout>
 
 ---
 
-## Supported Contracts
+## Two paths to set up
 
-| Protocol | Contract type | Notes |
-|----------|--------------|-------|
-| Clanker | Push-split (0xSplits V2) | Fee recipient must be set to EarnKit wallet |
-| Doppler | Pull-split (0xSplits V2) | Standard warehouse withdraw supported |
-| Custom 0xSplits V2 | Push or pull | Any V2 split with a configurable fee recipient |
+The [`/create`](https://app.earnkit.com/create) page offers two entrypoints. Pick whichever matches your situation.
 
----
+| Path | Use this when | Effort |
+|------|---------------|--------|
+| **Token** *(recommended)* | You have a token contract but no 0xSplits contract yet — we deploy one for you | Form → 2 signatures → 1 on-chain tx |
+| **Splits** | You already have a 0xSplits V2 contract receiving your fees | Form → 1 signature → manually add the buyback wallet as a recipient |
 
-## How It Works
-
-```
-Fees distributed to split contract
-  └── EarnKit buyback wallet receives its allocation
-           └── threshold crossed?
-                ├── yes → deduct 1% platform fee
-                │         → withdraw from Splits Warehouse (if pull-split)
-                │         → swap ETH / USDC / MINIDEV → your token (Uniswap V3)
-                │         → burn (burn() or transfer to 0x000...dEaD)
-                └── no  → accumulates until threshold
-```
-
-### Step by step
-
-1. **Register** — paste your splits contract address in the EarnKit dashboard. A Turnkey-managed buyback wallet is provisioned for you.
-
-2. **Set fee recipient** — update the fee recipient on your splits contract to point to the provisioned wallet address. EarnKit shows you exactly what transaction to send (or pre-fills a Safe TX Builder link if you're using a multisig).
-
-3. **Fees accumulate** — every distribution that reaches the wallet is tracked. EarnKit checks the swappable USD value after each receipt.
-
-4. **Threshold triggered** — once the wallet's swappable balance crosses your configured threshold (minimum $10, default $10), a buyback execution is queued.
-
-5. **Swap & burn** — the platform fee is deducted, assets are withdrawn from the Splits Warehouse (for pull-splits), swapped to your target token via the best available Uniswap V3 route, and burned.
+Both paths converge on the same back-end machinery; the only difference is who deploys the split.
 
 ---
 
-## Setting Up
+## Path 1: Token (we deploy the split)
 
-You configure buybacks at registration time in the [EarnKit dashboard](https://app.earnkit.com).
+You give us your token, your wallet, and the revenue percentages. We provision a buyback wallet and you sign one tx to deploy a fresh 0xSplits V2 PullSplit with those recipients.
 
-| Setting | Description |
-|---------|-------------|
-| **Splits contract address** | The 0xSplits V2 contract already receiving your fees |
-| **Target token address** | The ERC-20 token to buy and burn on Base |
-| **USD threshold** | Minimum swappable balance before execution triggers (min $10) |
-| **Recovery address** | Where to sweep funds if execution fails after all retries |
+### Form fields
+
+| Field | What it is |
+|-------|-----------|
+| **Token contract address** | The token whose fees should flow into the buyback. |
+| **Target token** | The ERC-20 we buy & burn. Usually your own token, but any Base ERC-20 with a Uniswap V3 pool works. |
+| **Owner wallet** | The wallet that controls the buyback config — sign-in identity. Pre-filled from your connected wallet. |
+| **Recovery address** | Emergency sweep destination. An EOA you control. |
+| **Email** | Becomes the root authenticator on the Turnkey sub-org that holds your buyback wallet. |
+| **Trigger threshold (USD)** | Minimum buyback-wallet balance before swap+burn fires. Floor enforced by the platform. |
+| **Revenue split (%)** | Owner % + Buyback %. Must sum to 100. Buyback ≥ 5%. Default: 90 / 10. |
+
+### Flow
+
+1. **Sign auth** — proves you control the owner wallet.
+2. **Backend provisions** a Turnkey-managed buyback wallet and creates the config in *deferred* mode (no split attached yet).
+3. **Deploy split** — your wallet pops with the `createSplit` calldata. The split is deployed with `[owner, buybackWallet]` as recipients at your chosen percentages, with `owner = your wallet` (so you can rotate recipients later via 0xSplits' UI).
+4. **Sign set-split** — attaches the freshly-deployed split to your config. Status flips to `ACTIVE`.
+5. **Ready screen** shows the split address and a one-click panel for redirecting your token's fees, when supported (see [supported redirectors](#supported-redirectors-clanker--vanilla)).
+
+### Supported redirectors (Clanker & vanilla)
+
+After the split is deployed, the final step is pointing your token's fee revenue at the split address. EarnKit auto-detects three patterns and offers a one-click update from the connected wallet:
+
+| Pattern | What it does | Auth |
+|---------|--------------|------|
+| **Clanker v4** | Calls `updateRewardRecipient(token, rewardIndex, split)` on your per-token LP locker | Connected wallet must be the admin for the chosen reward index (usually `0` for the main creator) |
+| **Clanker v3** (and v3.1) | Calls `updateCreatorRewardRecipient(lpTokenId, split)` on the `LpLockerv2` for the matching version | Connected wallet must be the creator admin for the LP NFT. If admin was rotated post-launch, paste the LP tokenId manually. |
+| **Vanilla ERC-20 setter** *(detail page only)* | Calls the detected setter — e.g. `setFeeRecipient(split)` — on the token contract itself | Connected wallet must satisfy the setter's own access control (often `onlyOwner`) |
+
+If none of these match (e.g. Doppler, see below), point fees at the split address manually through your launchpad's admin UI or BaseScan.
+
+---
+
+## Path 2: Splits (you already have an 0xSplits contract)
+
+If you've already deployed a 0xSplits V2 contract and want to add a buyback wallet as one of its recipients, use the **Splits** card on `/create`.
+
+### Form fields
+
+Same as Path 1, minus the percentage inputs (the split already exists) and minus the Token Contract field. You'll provide the existing split address instead.
+
+### Flow
+
+1. **Sign auth** — proves you control the owner address.
+2. **Backend provisions** a Turnkey buyback wallet keyed to the split you supplied.
+3. **Add the wallet to your split** — update your split's recipients (via 0xSplits' own UI, your Safe, or a direct `updateSplit` call) to include the buyback wallet. Whatever allocation you give it becomes the buyback share.
+4. **Click "Check now"** in the dashboard to verify membership — config status flips to `ACTIVE` once on-chain readers confirm the wallet is a recipient.
 
 <Callout type="warning">
-  The buyback wallet address is embedded at registration time and cannot be changed. If you need to update it, you would need to re-register and update the fee recipient on your contract again.
+  For Path 2, EarnKit does **not** rebalance your existing recipients — you decide what slice goes to buyback. The minimum threshold (`$10` default) still applies on the buyback wallet's accumulated share.
 </Callout>
 
 ---
 
-## Fee Example
+## What you can do from `/shared-buyback/[id]`
 
-With $200 accumulated in the buyback wallet:
+Every config has a dedicated detail page (linked from `/home` and `/shared-buyback`). Three panels:
 
-```
-$200 total swappable balance
-  ├── $2   → EarnKit platform fee (1%)
-  └── $198 → swapped to your token → burned
-```
+### Distribute fees
+
+The split contract holds funds temporarily until someone calls `distribute(...)` on it — that moves the balances into the per-recipient SplitsWarehouse. The **Distribute all** button bundles every non-zero token sitting on the split (ETH, WETH, USDC, etc.) into a single `Multicall3.aggregate3` tx so you get one wallet popup regardless of how many tokens have accumulated.
+
+This is permissionless — anyone can call it. Each recipient is credited their share automatically based on the split's allocations.
+
+### Claim my share
+
+After `distribute` credits the SplitsWarehouse, the owner-side share sits there until the owner claims it. The **Claim all** button reads your connected wallet's warehouse balance across ETH + supported tokens and fires `warehouse.withdraw(yourAddress, token)` per non-zero balance. One tx per token (warehouse doesn't allow batching withdraws from `msg.sender`).
+
+The buyback wallet's share is claimed automatically by the worker — you don't manage that.
+
+### Redirect fees to this split
+
+Paste the source token contract. We probe Clanker v4, Clanker v3, AND vanilla setters in parallel and surface whichever applies as a one-click update button. See [supported redirectors](#supported-redirectors-clanker--vanilla).
+
+### Per-config controls
+
+| Control | What it does |
+|---------|--------------|
+| **Check now** | Manually re-evaluates the buyback wallet's USD balance; queues an execution if the threshold is crossed |
+| **Edit threshold** | Adjust the USD floor that triggers swap+burn (must stay at or above the platform minimum) |
+| **Disable** | Marks the config as paused. Funds in the wallet stay put — the worker just stops checking it |
 
 ---
 
-## Execution States
+## How the worker fires
+
+```
+Buyback wallet receives its split allocation
+  └── threshold reached?
+        ├── yes → deduct 1% platform fee (sent to platform treasury)
+        │         → swap remaining → your target token (Uniswap V3, best route)
+        │         → burn (token.burn() OR transfer to 0x000...dEaD)
+        └── no  → keeps accumulating until next tick
+```
+
+The worker polls active configs on an interval; you can also press **Check now** in the dashboard to trigger an immediate check.
+
+---
+
+## Supported swap input tokens
+
+| Token | Notes |
+|-------|-------|
+| ETH | Native — wrapped to WETH for swap |
+| USDC | Native Base USDC (`0x8335...2913`) |
+| MINIDEV | First-party support |
+
+Each input is swapped in its own try/catch — if one route fails, the others still proceed. If fees arrive already denominated in your target token, no swap is needed; the executor goes straight to burn.
+
+---
+
+## Doppler
+
+Doppler launches are **structurally unsupported** for automatic redirection. The Doppler Airlock sets the `integrator` and fee recipient at launch time via `create(CreateParams)` and exposes no update setter — they are immutable post-deploy. The only paths are:
+
+- Be the launch integrator and manually `collectIntegratorFees(splitAddress, token, amount)` per claim, OR
+- Have your launchpad re-launch with the split address as integrator from the start.
+
+Both are out-of-band of EarnKit. The buyback wallet & split work fine; only the *redirection step* is missing for Doppler.
+
+---
+
+## Execution states
 
 | State | What's happening |
-|-------|-----------------|
-| `PENDING` | Registered — waiting for the first fee receipt |
-| `ACTIVE` | Monitoring — accumulating fees, threshold not yet crossed |
-| `QUEUED` | Threshold crossed — execution scheduled |
-| `WITHDRAWING` | Pulling assets from Splits Warehouse to the buyback wallet |
-| `SWAPPING` | Swapping ETH / USDC / MINIDEV → your token via Uniswap V3 |
+|-------|------------------|
+| `PROVISIONING` | Turnkey sub-org is being created. Brief. |
+| `PENDING_SPLIT_UPDATE` | Waiting for the buyback wallet to appear as a recipient in your split (Path 2 manual addition) |
+| `ACTIVE` | Healthy — monitoring the buyback wallet's balance |
+| `QUEUED` | Threshold crossed; execution scheduled |
+| `WITHDRAWING` | Pulling assets from the SplitsWarehouse to the buyback wallet |
+| `SWAPPING` | Routing fees through Uniswap V3 to your target token |
 | `BURNING` | Calling `burn()` or transferring to `0x000...dEaD` |
-| `COMPLETED` | Tokens burned successfully |
-| `RETRYING` | A step failed — retrying with backoff (up to 5 attempts: 1m, 5m, 30m, 2h, 12h) |
-| `FAILED` | All retries exhausted — use "Recover stranded funds" to retrieve assets |
-| `BROKEN` | Permanent error detected — contact support or re-register |
+| `COMPLETED` | Tokens burned, execution finalized |
+| `RETRYING` | A step failed; retrying with backoff (1m, 5m, 30m, 2h, 12h — five attempts) |
+| `FAILED` | All retries exhausted; manual recovery needed |
+| `PAUSED` | You disabled the config; worker no longer checks it |
+| `BROKEN` | Persistent on-chain error; contact support or recreate |
 
 ---
 
-## Supported Input Tokens
+## Security design
 
-The buyback wallet accepts ETH, USDC, and MINIDEV as fee inputs. Each is independently swapped to your buyback token. If one asset's swap fails, the others still proceed.
-
-**Special case:** if fees arrive already denominated in your target token, no swap is needed — the executor proceeds directly to burn.
-
----
-
-## Dashboard Controls
-
-| Action | Description |
-|--------|-------------|
-| **View wallet** | See the provisioned buyback wallet address to use as fee recipient |
-| **Execution history** | View past buyback executions with amounts and status |
-| **Recover stranded funds** | Sweep all assets from the buyback wallet to your recovery address |
-
----
-
-## Security Design
-
-- **Non-custodial** — you remain the owner of your splits contract. The buyback wallet is only the fee recipient, not a contract admin.
-- **Immutable wallet** — the buyback wallet address cannot be changed post-registration. No server compromise can redirect your fees.
-- **Operator gas drip** — EarnKit drips a small ETH reserve (0.0001 ETH) before each execution. Gas cost is excluded from the swappable balance check so it never falsely triggers the threshold.
-- **Per-asset swap isolation** — each token is swapped in its own try/catch. A failed USDC route will not block ETH or MINIDEV from being swapped and burned.
+- **Non-custodial.** You own the split contract (Path 1: deployed with `owner = your wallet`; Path 2: you owned it before us). You own your token contract. EarnKit only operates the buyback wallet, and that wallet's Turnkey policy is locked to: swap inputs → target token → burn or recovery destination.
+- **Immutable buyback wallet.** Once provisioned, the wallet address is baked into your config. There is no admin key, on our side or yours, that can rotate it. To change it you re-register, which provisions a fresh wallet.
+- **Per-asset swap isolation.** ETH, USDC, MINIDEV are each swapped in their own try/catch — a failed USDC route doesn't block ETH and vice versa.
+- **Operator gas drip.** EarnKit funds a small ETH reserve on the buyback wallet before each execution so gas is always available. The drip is excluded from the swappable-balance check so it can't false-trigger the threshold.
+- **Recovery address.** The Turnkey policy allows the worker to sweep all assets to the recovery address you set at registration. If something goes permanently wrong, funds end up back with you.
 
 ---
 
 ## FAQ
 
+**Can I change the split percentages later?**
+Yes for Path 1 — your split was deployed with `owner = your wallet`, so you can call `updateSplit(...)` on 0xSplits' own UI to rotate recipients or allocations. For Path 2 it depends on how you set up your original split.
+
 **Can I change the target token after registering?**
-No. The buyback wallet and its Turnkey policy are fixed at registration. You would need to re-register.
+No. The Turnkey policy bakes in the target token at registration; changing it requires a fresh registration (and a fresh buyback wallet).
 
-**What happens if my token doesn't have a `burn()` function?**
-EarnKit transfers the tokens to `0x000000000000000000000000000000000000dEaD` (the dead address).
+**What happens if my target token has no `burn()` function?**
+EarnKit transfers tokens to `0x000000000000000000000000000000000000dEaD`. We auto-detect which mode applies at registration via a transfer probe.
 
-**What if execution fails permanently?**
-After 5 retries, use **Recover stranded funds** in the dashboard to sweep all assets to your recovery address.
+**My Clanker v3 LP doesn't show up in the detail-page list.**
+The auto-discovery uses `getLpTokenIdsForCreator(yourWallet)`, which only includes the *original* creator. If you received admin rights via `updateCreatorRewardAdmin` post-launch, expand "Don't see your LP? Add by tokenId" on the v3 panel and paste the LP NFT's tokenId — we'll probe both v3.0 and v3.1 lockers.
+
+**My Clanker v4 update reverts.**
+The locker requires `msg.sender == admin_of_reward_index`. Try a different reward index — `0` is the main creator slot but multi-recipient launches use indices 1–6 for other parties. The dashboard surfaces the revert as "your wallet isn't the admin for this reward index."
+
+**What if the swap fails (e.g. no Uniswap pool, slippage)?**
+The execution retries with backoff up to five times. Past that, the funds remain in the buyback wallet — the Turnkey policy still permits a sweep to your recovery address.
 
 **Can I use any ERC-20 as my target token?**
-Yes — any ERC-20 on Base with a Uniswap V3 pool. The executor finds the best route automatically (direct or two-hop via WETH).
-
-**I use Clanker and all view functions on my split revert. Will this work?**
-Yes. Clanker uses push-splits where state lives in the factory, not on the contract. EarnKit handles this — executions are activated manually via the dashboard after your fee recipient is set.
+Any ERC-20 on Base with a Uniswap V3 pool. We check direct routes first and two-hop via WETH as a fallback.
