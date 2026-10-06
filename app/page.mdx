@@ -1,45 +1,37 @@
-# Introduction
+import LiveNumbers from "../components/LiveNumbers";
 
-Welcome to the EarnKit documentation.
+export const metadata = {
+	title: "Introduction",
+	description:
+		"EarnKit is an MCP server that matches builders' AI agents to programs and helps them win.",
+};
 
-EarnKit is a **token buyback-as-a-service** platform. Connect any on-chain revenue stream — token contracts, launchpad LP lockers, or existing 0xSplits contracts — to fully automated buyback & burn, with zero ongoing manual steps.
+# EarnKit
 
-## What EarnKit Does
+EarnKit is an MCP server that matches builders' AI agents to programs and helps them win.
 
-Every buyback runs through a **0xSplits V2 PullSplit** contract you control. The split routes fee revenue between you (the owner) and an EarnKit-managed **buyback wallet** at percentages you choose. When the buyback wallet's accumulated share crosses your USD threshold, EarnKit swaps it to your target token via Uniswap V3 and burns it.
+Add it to your agent, ask **"What can I earn?"**, and get the open money your repos fit: grants, hackathons and bounties, prize first.
 
-**Platform fee: 1% per execution** — deducted from the buyback wallet's swappable balance before swap+burn. The owner's share is paid directly via the split, untouched by EarnKit.
+<LiveNumbers />
 
-## How to Get Started
+Open money is the top prize one winner can get in each open program, added up. Whole prize pools are never added.
 
-1. Go to [app.earnkit.com](https://app.earnkit.com) and sign in.
-2. Open **Create** in the sidebar.
-3. Pick a card:
-   - **Token** — you have a token but no split yet. We provision the buyback wallet and you deploy a fresh split with one tx.
-   - **Splits** — you already have a 0xSplits V2 contract; we just slot in as one of its recipients.
-4. Point your fee revenue at the split:
-   - **Clanker v4 / v3** — one-click button in the dashboard.
-   - **Vanilla ERC-20** with a `setFeeRecipient`-style setter — one-click on the detail page.
-   - **Otherwise** — manual via your launchpad's admin UI or BaseScan.
-5. Revenue accumulates → threshold crossed → automatic swap & burn. Forever.
+## What it does
 
-→ [Full details](./buyback-and-burn)
+| Step | What happens |
+|---|---|
+| Match | Your agent shares the repos you choose. EarnKit shows the programs they fit, with the prize, the deadline and how hard each one is. |
+| Guide | Each program has a short guide: the prize, the difficulty, what won before, and what the ecosystem wants now. |
+| Submit | Your agent checks what the program needs, builds what's missing and confirms once. You submit on the program's own site. |
+| Earn more | Every entry can get a token on Base: you earn 40% of its trading fees, and the entry competes for the builder bonus. |
 
-## Architecture Overview
+EarnKit is free and needs no account.
 
-```
-Your fee source (token contract, LP locker, etc.)
-    └── 0xSplits V2 PullSplit (you own it)
-            ├── owner share         → your wallet (via 0xSplits warehouse)
-            └── buyback share       → EarnKit-managed buyback wallet
-                     └── threshold crossed?
-                          ├── yes → 1% platform fee
-                          │         → swap → your target token (Uniswap V3)
-                          │         → burn
-                          └── no  → keeps accumulating
-```
+## Read next
 
-- **Non-custodial.** You own the split. You own the token contract. EarnKit operates only the buyback wallet, and its Turnkey policy is locked to swap-and-burn-or-recover.
-- **Immutable buyback wallet.** The wallet address is baked in at registration. No admin key — yours or ours — can rotate it.
-- **Recovery built in.** Every config sets a recovery address at registration; the Turnkey policy permits sweeping all funds there if anything goes permanently wrong.
-- **Operator gas drip.** EarnKit funds gas for each execution so your buyback wallet never holds ETH for fees beyond what's needed. Drip is excluded from the threshold check.
+| Page | For |
+|---|---|
+| [For builders](/for-builders) | Install, "What can I earn?", the builder bonus, tokens, payouts |
+| [EarnKit builder campaigns](/for-sponsors) | Ecosystems and companies that want builders' agents building for them |
+| [Money and trust](/money-and-trust) | Where every fee goes, the Safe, sanctions screening, review |
+| [FAQ](/faq) | Short answers |

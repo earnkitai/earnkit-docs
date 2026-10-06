@@ -6,8 +6,8 @@
 @theme inline {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
-	--font-sans: var(--font-geist-sans);
-	--font-mono: var(--font-geist-mono);
+	--font-sans: var(--font-funnel-sans);
+	--font-display: var(--font-funnel-display);
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -45,8 +45,8 @@
 
 :root {
 	--radius: 0.625rem;
-	--background: oklch(1 0 0);
-	--foreground: oklch(0.145 0 0);
+	--background: #f7f9fe;
+	--foreground: #0a0b1a;
 	--card: oklch(1 0 0);
 	--card-foreground: oklch(0.145 0 0);
 	--popover: oklch(1 0 0);
@@ -79,8 +79,8 @@
 }
 
 .dark {
-	--background: oklch(0.145 0 0);
-	--foreground: oklch(0.985 0 0);
+	--background: #0a0b1a;
+	--foreground: #e5eefc;
 	--card: oklch(0.205 0 0);
 	--card-foreground: oklch(0.985 0 0);
 	--popover: oklch(0.205 0 0);
@@ -119,4 +119,45 @@
 	body {
 		@apply bg-background text-foreground;
 	}
+}
+
+/* EarnKit brand (earnkit.com globals.css / tailwind.config.ts): Funnel Display headings, Funnel Sans
+   body, ek-navy borders and ek-blue accents in dark mode. */
+body {
+	font-family: var(--font-funnel-sans), ui-sans-serif, system-ui, sans-serif;
+}
+h1,
+h2,
+h3,
+h4 {
+	font-family: var(--font-funnel-display), ui-sans-serif, system-ui, sans-serif;
+	font-weight: 500;
+}
+.ek-wordmark {
+	height: 22px;
+	width: auto;
+	color: #0f1839;
+}
+.dark .ek-wordmark {
+	color: #e5eefc;
+}
+.ek-nav-link {
+	font-size: 0.875rem;
+	font-weight: 500;
+}
+.dark .nextra-navbar-blur {
+	background-color: rgb(10 11 26 / 0.85);
+}
+.dark table tr {
+	border-color: #112969;
+}
+.dark table th,
+.dark table td {
+	border-color: #112969 !important;
+}
+.dark table tr:nth-child(even) {
+	background-color: rgb(15 24 57 / 0.6) !important;
+}
+.dark div:has(> footer) {
+	background-color: #0f1839 !important;
 }

@@ -1,0 +1,114 @@
+export const metadata = {
+	title: "For builders",
+	description:
+		"Add EarnKit to your agent, ask \"What can I earn?\", and enter the programs your repos fit.",
+};
+
+# For builders
+
+Ask your agent **"What can I earn?"** and see the money your repos fit, prize first. Free, no account.
+
+## Install
+
+The EarnKit link: `https://earnkit.com/mcp`
+
+| Agent | How |
+|---|---|
+| Grok Bot | Add an MCP connector in Grok Bot. Paste the EarnKit link and save. |
+| Cursor | One click from [earnkit.com](https://earnkit.com), or open Settings, then MCP, and add the config below. |
+| VS Code | One click from [earnkit.com](https://earnkit.com), or run **MCP: Add Server** from the Command Palette and paste the EarnKit link. |
+| Claude Code | Run the command below in your terminal. |
+| Muse | Add a custom integration in Muse. Paste the EarnKit link and save. |
+| Other agents | Paste the EarnKit link wherever your agent adds MCP servers or connectors. Local-only agents: the command below. |
+
+Claude Code:
+
+```bash
+claude mcp add --transport http earnkit https://earnkit.com/mcp
+```
+
+Cursor config:
+
+```json
+{
+  "mcpServers": {
+    "earnkit": {
+      "url": "https://earnkit.com/mcp"
+    }
+  }
+}
+```
+
+Agents that only run local servers:
+
+```bash
+npx -y mcp-remote https://earnkit.com/mcp
+```
+
+## "What can I earn?"
+
+Ask it in your agent. The answer is money first: the programs your repos fit, then the rest of the open money, in tables like this:
+
+| Column | Shows |
+|---|---|
+| Program | The program's factual name |
+| Prize | The prize, as the program states it |
+| Difficulty | Easy, Medium or Hard, from past results or what the program publishes. "(estimate)" when it's EarnKit's own estimate. |
+| Ends | The deadline, or rolling |
+| Your repo | Which of your repos fits, and what it's missing (only when a repo fits) |
+
+The total on top is the open money: the top prize one winner can get in each program shown, added up. Then pick a program and your agent does the rest: it checks what's missing, builds it, and confirms once before you submit on the program's own site.
+
+## Program guides
+
+Every program EarnKit lists has a short guide at [earnkit.com/programs](https://earnkit.com/programs):
+
+| Section | What it tells you |
+|---|---|
+| Prize and end | As the program states it |
+| Difficulty | The band and what it's based on, such as "20 of ~160 entries won last round" |
+| What won before | Past winners and the themes that won |
+| What the ecosystem wants now | The program's current focus |
+| Best bet | EarnKit's advice on what to build, when there's enough to go on |
+
+Every fact links to its source. Your agent reads the same guide.
+
+## The builder bonus
+
+Extra money on top of the program's own prize, paid by EarnKit from token fees.
+
+| Builder bonus | Details |
+|---|---|
+| Who | Entries that launched their token through EarnKit |
+| Funded by | 20% of every entered token's trading fees, pooled per program |
+| Rounds | One per program; rolling programs have one per calendar month (UTC) |
+| Ranked by | Real traction in the round: onchain users, a live product, shipping, new repo interest, token holders. Trading volume never counts. |
+| Paid to | The top 10 on each program, in WETH on Base |
+| When | The round ends, the top 10 are public for 48 hours of review, then the pool is paid automatically |
+
+Full rules: [earnkit.com/policy](https://earnkit.com/policy).
+
+## Tokens
+
+When your entry is ready, your agent proposes a token on Base, named after your project.
+
+| Token | Details |
+|---|---|
+| Your share | You earn 40% of the token's trading fees, after the launch protocol's share; paid in WETH. |
+| Cost | None: the launch gas is paid for you |
+| Builder bonus | The token enters your project in the builder bonus |
+| Skip it | One word. Skipping means no token and no builder bonus, nothing else. |
+| Limit | One token per repo. Launches are public and permanent. |
+
+Your agent asks once before launching. If something your program requires is still missing, it tells you that first, and the token launches only once your entry is complete.
+
+## Payouts
+
+| Money | From | How |
+|---|---|---|
+| Program prizes | The program's organizer | Their own process, on their own site |
+| Token fees (your 40%) | Your token's trading fees | Claim on tokens.fun, in WETH on Base |
+| Builder bonus | EarnKit | Automatic, in WETH on Base, to the wallet your entry gave |
+| EarnKit campaign prizes | EarnKit | Automatic, to your payout wallet, after a 48 h review |
+
+Prize wallets are screened against sanctions lists before every payout.
