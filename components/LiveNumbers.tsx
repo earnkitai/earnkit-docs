@@ -2,11 +2,18 @@
  * Live numbers from earnkit.com/api/stats, read server-side and revalidated every 10 minutes
  * (Ruling 24): one read per 10 minutes at most, nothing from the browser. On any failure (network,
  * non-200, a missing field) it shows a link to earnkit.com instead of numbers.
+ *
+ * C18: weak figures are hidden, the way earnkit.com's landing hides them (v2.7 Ruling 20): open
+ * money always shows; agents earning only at 100 or more (INSTALLS_SHOWN_FROM); every other
+ * count only when above 0.
  */
 
 import { Table } from "nextra/components";
 
 const STATS_URL = "https://earnkit.com/api/stats";
+
+/** earnkit.com landing.ts INSTALLS_SHOWN_FROM: installs are hidden under 100 (spec §1). */
+const INSTALLS_SHOWN_FROM = 100;
 
 type Stats = {
 	open_money_usd: number;
@@ -14,6 +21,7 @@ type Stats = {
 	bonus_programs_open: number;
 	coins_launched: number;
 	bonus_paid_eth: number;
+	installs: number;
 };
 
 const KEYS: (keyof Stats)[] = [
@@ -22,6 +30,7 @@ const KEYS: (keyof Stats)[] = [
 	"bonus_programs_open",
 	"coins_launched",
 	"bonus_paid_eth",
+	"installs",
 ];
 
 async function readStats(): Promise<Stats | null> {
@@ -53,13 +62,13 @@ function Fallback() {
 export default async function LiveNumbers() {
 	const s = await readStats();
 	if (!s) return <Fallback />;
-	const rows: [string, string][] = [
-		["Open money", usd(s.open_money_usd)],
-		["Programs open", int(s.programs_open)],
-		["Programs with a builder bonus", int(s.bonus_programs_open)],
-		["Tokens launched", int(s.coins_launched)],
-		["Builder bonus paid", eth(s.bonus_paid_eth)],
-	];
+	const rows: [string, string][] = [["Open money", usd(s.open_money_usd)]];
+	if (s.programs_open > 0) rows.push(["Programs open", int(s.programs_open)]);
+	if (s.bonus_programs_open > 0)
+		rows.push(["Programs with a builder bonus", int(s.bonus_programs_open)]);
+	if (s.installs >= INSTALLS_SHOWN_FROM) rows.push(["Agents earning", int(s.installs)]);
+	if (s.coins_launched > 0) rows.push(["Tokens launched", int(s.coins_launched)]);
+	if (s.bonus_paid_eth > 0) rows.push(["Builder bonus paid", eth(s.bonus_paid_eth)]);
 	return (
 		<Table className="mt-6">
 			<thead>
