@@ -15,19 +15,21 @@ The EarnKit link: `https://earnkit.com/mcp`
 | Agent | How |
 |---|---|
 | Grok Bot | Add an MCP connector in Grok Bot. Paste the EarnKit link and save. |
-| Cursor | One click from [earnkit.com](https://earnkit.com), or open Settings, then MCP, and add the config below. |
-| VS Code | One click from [earnkit.com](https://earnkit.com), or run **MCP: Add Server** from the Command Palette and paste the EarnKit link. |
-| Claude Code | Run the command below in your terminal. |
+| Claude Code | Run the command below in your terminal, then type `/mcp`, pick earnkit, approve. |
+| Cursor | One click from [earnkit.com](https://earnkit.com), or add the config below to `~/.cursor/mcp.json`. |
+| Codex | Run the command below in your terminal, then run `codex mcp login earnkit` and approve. |
 | Muse | Add a custom integration in Muse. Paste the EarnKit link and save. |
 | Other agents | Paste the EarnKit link wherever your agent adds MCP servers or connectors. Local-only agents: the command below. |
 
 Claude Code:
 
 ```bash
-claude mcp add --transport http earnkit https://earnkit.com/mcp
+claude mcp add --transport http --scope user earnkit https://earnkit.com/mcp
 ```
 
-Cursor config:
+Then type `/mcp`, pick earnkit, approve.
+
+Cursor config (`~/.cursor/mcp.json`):
 
 ```json
 {
@@ -37,6 +39,18 @@ Cursor config:
     }
   }
 }
+```
+
+Codex:
+
+```bash
+codex mcp add earnkit --url https://earnkit.com/mcp
+```
+
+Then run:
+
+```bash
+codex mcp login earnkit
 ```
 
 Agents that only run local servers:
